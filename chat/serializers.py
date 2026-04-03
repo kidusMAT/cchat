@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
     Profile, Follow, Conversation, Message, MessageReaction,
-    ChatVisibility, AnonymousProfile, Post
+    ConversationReaction, ChatVisibility, AnonymousProfile, Post
 )
 
 
@@ -78,8 +78,8 @@ class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
         fields = [
-            'id', 'conversation', 'sender', 'sender_username', 'text',
-            'timestamp', 'likes', 'dislikes', 'caps', 'views',
+            'id', 'conversation', 'sender', 'sender_username', 'text', 'message_type', 'attachment',
+            'is_read', 'timestamp', 'likes', 'dislikes', 'caps', 'views',
             'dominant_reaction', 'user_reaction'
         ]
         read_only_fields = ['id', 'sender', 'timestamp', 'likes', 'dislikes', 'caps', 'views']
@@ -102,18 +102,24 @@ class ConversationSerializer(serializers.ModelSerializer):
     last_message = MessageSerializer(source='get_last_message', read_only=True)
     is_public = serializers.SerializerMethodField()
     other_participant = serializers.SerializerMethodField()
+    user_reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
-        fields = ['id', 'participants', 'last_message', 'is_public', 'other_participant', 'created_at', 'updated_at']
+        fields = [
+            'id', 'participants', 'last_message', 'is_public', 
+            'other_participant', 'likes', 'dislikes', 'caps', 
+            'smiles', 'views', 'user_reactions', 'created_at', 'updated_at'
+        ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_is_public(self, obj):
-        """Check if conversation is public for current user"""
+        """Check if conversation is public for current user or anyone"""
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             return obj.is_public_for_user(request.user)
-        return False
+        # For anonymous users, return True if any part of it is public
+        return ChatVisibility.objects.filter(conversation=obj, is_public=True).exists()
 
     def get_other_participant(self, obj):
         """Get the other participant's info"""
@@ -123,6 +129,14 @@ class ConversationSerializer(serializers.ModelSerializer):
             if other:
                 return UserSerializer(other).data
         return None
+
+    def get_user_reactions(self, obj):
+        """Get current user's reactions to this conversation"""
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            reactions = ConversationReaction.objects.filter(conversation=obj, user=request.user)
+            return [r.reaction_type for r in reactions]
+        return []
 
 
 class ChatVisibilitySerializer(serializers.ModelSerializer):

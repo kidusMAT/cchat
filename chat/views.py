@@ -7,10 +7,16 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.db.models import Q, Count
 from django.shortcuts import get_object_or_404
+from django.conf import settings
+from google.oauth2 import id_token
+from google.auth.transport import requests
+import urllib.request
+import urllib.error
+import json
 
 from .models import (
     Profile, Follow, Conversation, Message, MessageReaction,
-    ChatVisibility, AnonymousProfile, Post
+    ConversationReaction, ChatVisibility, AnonymousProfile, Post
 )
 from .serializers import (
     UserSerializer, ProfileSerializer, RegisterSerializer,
@@ -60,6 +66,55 @@ def login_user(request):
             }
         })
     return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def google_login(request):
+    """Handle Google One-Tap or regular sign-in"""
+    token = request.data.get('token')
+    if not token:
+        return Response({'error': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Verify the Access Token
+        req = urllib.request.Request('https://www.googleapis.com/oauth2/v3/userinfo')
+        req.add_header('Authorization', f'Bearer {token}')
+        response = urllib.request.urlopen(req)
+        idinfo = json.loads(response.read())
+        
+        email = idinfo.get('email')
+        if not email:
+            return Response({'error': 'Email not provided by Google account.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        first_name = idinfo.get('given_name', '')
+        last_name = idinfo.get('family_name', '')
+
+        # Find or create user
+        user, created = User.objects.get_or_create(email=email, defaults={
+            'username': email.split('@')[0],
+            'first_name': first_name,
+            'last_name': last_name
+        })
+        
+        # Ensure profile exists (signal should have created it, but safe check)
+        if not hasattr(user, 'profile'):
+            Profile.objects.create(user=user)
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'user': UserSerializer(user).data,
+            'profile': ProfileSerializer(user.profile).data,
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+        })
+    except urllib.error.URLError:
+        # Invalid access token
+        return Response({'error': 'Invalid Google token'}, status=status.HTTP_401_UNAUTHORIZED)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -159,18 +214,15 @@ def check_following(request, username):
 # ==================== Chat Discovery Views ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def get_recommended_chats(request):
     """Get algorithm-recommended public chats"""
     # Get conversations where at least one participant has made it public
     public_visibilities = ChatVisibility.objects.filter(is_public=True)
     conversation_ids = public_visibilities.values_list('conversation_id', flat=True).distinct()
     
-    # Exclude conversations where current user is a participant
     conversations = Conversation.objects.filter(
         id__in=conversation_ids
-    ).exclude(
-        participants=request.user
     ).order_by('-updated_at')[:20]
     
     result = []
@@ -180,6 +232,7 @@ def get_recommended_chats(request):
         if len(participants) != 2:
             continue
             
+        display_usernames = {}
         chatter_data = []
         for participant in participants:
             # Check if this participant made their side public
@@ -188,6 +241,7 @@ def get_recommended_chats(request):
             if is_public:
                 # Show real profile
                 profile = participant.profile
+                display_usernames[participant.username] = participant.username
                 chatter_data.append({
                     'username': participant.username,
                     'avatar_url': profile.get_avatar_url(),
@@ -202,6 +256,7 @@ def get_recommended_chats(request):
             else:
                 # Show anonymous profile
                 anonymous = AnonymousProfile.get_or_create_for_user(conv, participant)
+                display_usernames[participant.username] = anonymous.fake_username
                 chatter_data.append({
                     'username': anonymous.fake_username,
                     'avatar_url': anonymous.get_avatar_url(),
@@ -216,11 +271,21 @@ def get_recommended_chats(request):
         
         # Get messages
         messages = Message.objects.filter(conversation=conv).order_by('timestamp')
+        serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
+        
+        for msg in serialized_messages:
+            real_sender = msg.get('sender_username')
+            if real_sender in display_usernames:
+                msg['sender_username'] = display_usernames[real_sender]
         
         result.append({
             'conversation_id': conv.id,
             'chatters': chatter_data,
-            'messages': MessageSerializer(messages, many=True, context={'request': request}).data,
+            'messages': serialized_messages,
+            'likes': conv.likes,
+            'dislikes': conv.dislikes,
+            'caps': conv.caps,
+            'smiles': conv.smiles,
             'updated_at': conv.updated_at
         })
     
@@ -243,8 +308,6 @@ def get_following_chats(request):
     
     conversations = Conversation.objects.filter(
         id__in=conversation_ids
-    ).exclude(
-        participants=request.user
     ).order_by('-updated_at')[:20]
     
     result = []
@@ -253,12 +316,14 @@ def get_following_chats(request):
         if len(participants) != 2:
             continue
             
+        display_usernames = {}
         chatter_data = []
         for participant in participants:
             is_public = conv.is_public_for_user(participant)
             
             if is_public:
                 profile = participant.profile
+                display_usernames[participant.username] = participant.username
                 chatter_data.append({
                     'username': participant.username,
                     'avatar_url': profile.get_avatar_url(),
@@ -272,6 +337,7 @@ def get_following_chats(request):
                 })
             else:
                 anonymous = AnonymousProfile.get_or_create_for_user(conv, participant)
+                display_usernames[participant.username] = anonymous.fake_username
                 chatter_data.append({
                     'username': anonymous.fake_username,
                     'avatar_url': anonymous.get_avatar_url(),
@@ -285,11 +351,21 @@ def get_following_chats(request):
                 })
         
         messages = Message.objects.filter(conversation=conv).order_by('timestamp')
+        serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
+        
+        for msg in serialized_messages:
+            real_sender = msg.get('sender_username')
+            if real_sender in display_usernames:
+                msg['sender_username'] = display_usernames[real_sender]
         
         result.append({
             'conversation_id': conv.id,
             'chatters': chatter_data,
-            'messages': MessageSerializer(messages, many=True, context={'request': request}).data,
+            'messages': serialized_messages,
+            'likes': conv.likes,
+            'dislikes': conv.dislikes,
+            'caps': conv.caps,
+            'smiles': conv.smiles,
             'updated_at': conv.updated_at
         })
     
@@ -320,20 +396,55 @@ def get_user_conversations(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def get_conversation(request, conversation_id):
     """Get a specific conversation with messages"""
     conversation = get_object_or_404(Conversation, id=conversation_id)
     
-    # Check if user is a participant
-    if not conversation.participants.filter(id=request.user.id).exists():
-        return Response({'error': 'Not a participant'}, status=status.HTTP_403_FORBIDDEN)
+    is_authenticated = request.user.is_authenticated
+    is_participant = is_authenticated and conversation.participants.filter(id=request.user.id).exists()
+    
+    if not is_participant:
+        # If any user made it public, anyone can view it
+        if not ChatVisibility.objects.filter(conversation=conversation, is_public=True).exists():
+            return Response({'error': 'Not a participant or public'}, status=status.HTTP_403_FORBIDDEN)
     
     messages = Message.objects.filter(conversation=conversation).order_by('timestamp')
+    serialized_conv = ConversationSerializer(conversation, context={'request': request}).data
+    serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
+    
+    # Anonymize users and messages for non-participants based on their visibility preference
+    if not is_participant:
+        display_usernames = {}
+        for participant in conversation.participants.all():
+            if conversation.is_public_for_user(participant):
+                display_usernames[participant.username] = participant.username
+            else:
+                anon = AnonymousProfile.get_or_create_for_user(conversation, participant)
+                display_usernames[participant.username] = anon.fake_username
+                
+                # Replace in serialized_conv['participants']
+                for p in serialized_conv.get('participants', []):
+                    if p['username'] == participant.username:
+                        p['username'] = anon.fake_username
+                        p['first_name'] = 'Anonymous'
+                        p['last_name'] = ''
+                        
+                # Replace in 'other_participant' just in case
+                other = serialized_conv.get('other_participant')
+                if other and other['username'] == participant.username:
+                    other['username'] = anon.fake_username
+                    other['first_name'] = 'Anonymous'
+                    other['last_name'] = ''
+
+        for msg in serialized_messages:
+            real_sender = msg.get('sender_username')
+            if real_sender in display_usernames:
+                msg['sender_username'] = display_usernames[real_sender]
     
     return Response({
-        'conversation': ConversationSerializer(conversation, context={'request': request}).data,
-        'messages': MessageSerializer(messages, many=True, context={'request': request}).data
+        'conversation': serialized_conv,
+        'messages': serialized_messages
     })
 
 
@@ -391,6 +502,59 @@ def toggle_visibility(request, conversation_id):
         'is_public': visibility.is_public,
         'message': f'Chat is now {"public" if visibility.is_public else "private"}'
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def react_to_conversation(request, conversation_id):
+    """Add or toggle reaction to a conversation"""
+    conversation = get_object_or_404(Conversation, id=conversation_id)
+    reaction_type = request.data.get('reaction_type')
+    
+    if reaction_type not in ['like', 'dislike', 'cap', 'smile']:
+        return Response({'error': 'Invalid reaction type'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check if user already reacted with this type
+    existing = ConversationReaction.objects.filter(
+        conversation=conversation,
+        user=request.user,
+        reaction_type=reaction_type
+    ).first()
+    
+    if existing:
+        # Removal: Decrement count
+        if reaction_type == 'like':
+            conversation.likes = max(0, conversation.likes - 1)
+        elif reaction_type == 'dislike':
+            conversation.dislikes = max(0, conversation.dislikes - 1)
+        elif reaction_type == 'cap':
+            conversation.caps = max(0, conversation.caps - 1)
+        elif reaction_type == 'smile':
+            conversation.smiles = max(0, conversation.smiles - 1)
+        
+        existing.delete()
+        conversation.save()
+        return Response(ConversationSerializer(conversation, context={'request': request}).data)
+    
+    # Addition: Increment count
+    ConversationReaction.objects.create(
+        conversation=conversation,
+        user=request.user,
+        reaction_type=reaction_type
+    )
+    
+    if reaction_type == 'like':
+        conversation.likes += 1
+    elif reaction_type == 'dislike':
+        conversation.dislikes += 1
+    elif reaction_type == 'cap':
+        conversation.caps += 1
+    elif reaction_type == 'smile':
+        conversation.smiles += 1
+    
+    conversation.save()
+    
+    return Response(ConversationSerializer(conversation, context={'request': request}).data)
 
 
 # ==================== Message Views ====================
@@ -466,6 +630,28 @@ def react_to_message(request, message_id):
     message.save()
     
     return Response(MessageSerializer(message, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_messages_read(request, conversation_id):
+    """Mark all messages in a conversation as read for the current user"""
+    conversation = get_object_or_404(Conversation, id=conversation_id)
+    
+    # Check if user is a participant
+    if not conversation.participants.filter(id=request.user.id).exists():
+        return Response({'error': 'Not a participant'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Mark messages as read where sender is NOT the current user
+    unread_messages = Message.objects.filter(
+        conversation=conversation,
+        is_read=False
+    ).exclude(sender=request.user)
+    
+    count = unread_messages.count()
+    unread_messages.update(is_read=True)
+    
+    return Response({'marked_read': count, 'message': f'{count} messages marked as read'})
 
 
 @api_view(['DELETE'])

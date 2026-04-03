@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useParams, useNavigate } from 'react-router-dom';
+import { useGoogleLogin } from '@react-oauth/google';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send,
@@ -7,32 +8,195 @@ import {
   ThumbsUp,
   Skull,
   Heart,
-  Smile,
+  Laugh,
+  Paperclip,
+  Plus,
+  Image,
+  Music,
   Eye,
+  EyeOff,
   Users,
   MessageCircle,
   ChevronUp,
   ChevronDown,
   Radio,
-  Flame
+  Flame,
+  User,
+  Lock,
+  Mail,
+  X,
+  Target,
+  Camera,
+  Video,
+  LogOut
 } from 'lucide-react';
 import axios from 'axios';
 
 // Configure axios
 axios.defaults.baseURL = 'http://localhost:8000';
 
-const Header = () => (
-  <header className="header">
-    <div className="container header-content">
-      <Link to="/" className="logo">
-        CCHAT<span>.</span>
-      </Link>
-      <div className="live-status">
-        <Radio size={16} color="#FF4B5C" /> 6 LIVE
-      </div>
-    </div>
-  </header>
-);
+const EMOJI_DATA = [
+  { char: '✨', tags: 'sparkles vibe shine magic' }, { char: '🔥', tags: 'fire hot flame vibe' }, { char: '🌈', tags: 'rainbow vibe color' }, { char: '🌪️', tags: 'tornado vibe storm' }, { char: '🌊', tags: 'wave vibe water' },
+  { char: '⚡', tags: 'bolt light tech' }, { char: '🌌', tags: 'galaxy space vibe' }, { char: '🌠', tags: 'star wish' }, { char: '🌑', tags: 'moon dark' }, { char: '🌕', tags: 'moon light' },
+  { char: '🪐', tags: 'planet space' }, { char: '🌀', tags: 'vortex spiral' }, { char: '🎭', tags: 'mask drama vibe' }, { char: '🔮', tags: 'crystal ball magic' }, { char: '🧿', tags: 'eye protect' },
+  { char: '🚀', tags: 'rocket motion space' }, { char: '🛸', tags: 'ufo alien motion' }, { char: '🛰️', tags: 'satellite tech motion' }, { char: '🚁', tags: 'heli motion' }, { char: '🛴', tags: 'scoot motion' },
+  { char: '🛹', tags: 'skate motion' }, { char: '👟', tags: 'shoe motion' }, { char: '💨', tags: 'dash motion' }, { char: '🤸', tags: 'flip motion' }, { char: '🏄', tags: 'surf motion' },
+  { char: '🏌️', tags: 'golf motion' }, { char: '🤾', tags: 'ball motion' }, { char: '🏇', tags: 'horse motion' }, { char: '🤺', tags: 'sword motion' }, { char: '🏹', tags: 'archery motion' },
+  { char: '💾', tags: 'disk tech save' }, { char: '🖱️', tags: 'mouse tech' }, { char: '⌨️', tags: 'keys tech type' }, { char: '🖥️', tags: 'pc tech' }, { char: '🎬', tags: 'movie tech' },
+  { char: '📷', tags: 'cam tech' }, { char: '📼', tags: 'vhs tech' }, { char: '📻', tags: 'radio tech' }, { char: '🕯️', tags: 'candle light' }, { char: '🔦', tags: 'torch light' },
+  { char: '🔋', tags: 'battery tech' }, { char: '🔌', tags: 'plug tech' }, { char: '📡', tags: 'dish tech' }, { char: '🔭', tags: 'scope tech' }, { char: '🧪', tags: 'flask tech' },
+  { char: '💠', tags: 'diamond symbol' }, { char: '🔱', tags: 'trident symbol' }, { char: '⚜️', tags: 'fleur symbol' }, { char: '⚕️', tags: 'medical symbol' }, { char: '♾️', tags: 'infinity symbol' },
+  { char: '☣️', tags: 'bio symbol hazard' }, { char: '☢️', tags: 'radio symbol hazard' }, { char: '☯️', tags: 'yin symbol' }, { char: '☮️', tags: 'peace symbol' }, { char: '☪️', tags: 'star symbol' },
+  { char: '🕉️', tags: 'om symbol' }, { char: '☸️', tags: 'wheel symbol' }, { char: '🔯', tags: 'star symbol' }, { char: '✡️', tags: 'jewish symbol' }, { char: '✝️', tags: 'cross symbol' },
+  { char: '🍄', tags: 'shroom nature unique' }, { char: '🐚', tags: 'shell nature' }, { char: '🦪', tags: 'oyster nature' }, { char: '🐙', tags: 'octopus animal unique' }, { char: '🦖', tags: 'dino animal' },
+  { char: '🐉', tags: 'dragon animal unique' }, { char: '🦄', tags: 'unicorn animal' }, { char: '🌵', tags: 'cactus nature' }, { char: '🌴', tags: 'palm nature' }, { char: '🌻', tags: 'flower nature' },
+  { char: '🍁', tags: 'maple nature' }, { char: '🍃', tags: 'leaf nature' }, { char: '🍒', tags: 'cherry food' }, { char: '🍓', tags: 'berry food' }, { char: '🥑', tags: 'avo food' },
+  { char: '👺', tags: 'goblin chaos' }, { char: '👽', tags: 'alien chaos' }, { char: '💀', tags: 'skull chaos' }, { char: '🤡', tags: 'clown chaos' }, { char: '🤖', tags: 'robot chaos tech' },
+  { char: '👹', tags: 'ogre chaos' }, { char: '👻', tags: 'ghost chaos' }, { char: '🕵️', tags: 'spy chaos' }, { char: '🧛', tags: 'vamp chaos' }, { char: '🧟', tags: 'zomb chaos' },
+  { char: '🧞', tags: 'genie chaos' }, { char: '🧜', tags: 'mer chaos' }, { char: '🧚', tags: 'fairy chaos' }, { char: '🧙', tags: 'wiz chaos' }, { char: '🧝', tags: 'elf chaos' },
+  { char: '🖤', tags: 'heart black' }, { char: '💔', tags: 'heart broken' }, { char: '❣️', tags: 'heart' }, { char: '💕', tags: 'hearts' }, { char: '💘', tags: 'heart arrow' },
+  { char: '🧿', tags: 'eye' }, { char: '👁️‍🗨️', tags: 'eye bubble' }, { char: '🗨️', tags: 'bubble' }, { char: '🗯️', tags: 'shout' }, { char: '💭', tags: 'think' },
+  { char: '💎', tags: 'gem' }, { char: '💍', tags: 'ring' }, { char: '👑', tags: 'crown' }, { char: '👒', tags: 'hat' }, { char: '🎒', tags: 'bag' },
+  { char: '🕶️', tags: 'cool' }, { char: '👔', tags: 'suit' }, { char: '👗', tags: 'dress' }, { char: '👘', tags: 'kimono' }, { char: '👙', tags: 'bikini' },
+  { char: '🧤', tags: 'glove' }, { char: '🧣', tags: 'scarf' }, { char: '🧥', tags: 'coat' }, { char: '🧦', tags: 'sock' }, { char: '👡', tags: 'shoe' },
+  { char: '👠', tags: 'shoe' }, { char: '👢', tags: 'boot' }, { char: '👞', tags: 'shoe' }, { char: '👟', tags: 'shoe' }, { char: '🥾', tags: 'boot' },
+  { char: '🥿', tags: 'shoe' }, { char: '🩰', tags: 'dance' }, { char: '👝', tags: 'bag' }, { char: '👜', tags: 'bag' }, { char: '💼', tags: 'bag' },
+  { char: '🎒', tags: 'bag' }, { char: '🌂', tags: 'rain' }, { char: '☂️', tags: 'rain' }, { char: '🧶', tags: 'knit' }, { char: '🧵', tags: 'sew' },
+  { char: '🪡', tags: 'needle' }, { char: '🪢', tags: 'knot' }, { char: '🪝', tags: 'hook' }, { char: '🪞', tags: 'mirror' }, { char: '🪟', tags: 'window' },
+  { char: '🪑', tags: 'chair' }, { char: '🪒', tags: 'razor' }, { char: '🪤', tags: 'trap' }, { char: '🪣', tags: 'bucket' }, { char: '🪥', tags: 'brush' },
+  { char: '🪦', tags: 'grave' }, { char: '🪧', tags: 'sign' }, { char: '🪨', tags: 'stone' }, { char: '🪵', tags: 'wood' }, { char: '🛖', tags: 'hut' },
+  { char: '🪴', tags: 'plant' }, { char: '🩺', tags: 'doc' }, { char: '💊', tags: 'pill' }, { char: '🩹', tags: 'bandage' }, { char: '🧬', tags: 'dna' },
+  { char: '🧪', tags: 'lab' }, { char: '🌡️', tags: 'heat' }, { char: '🩺', tags: 'med' }, { char: '🪠', tags: 'plunger' }, { char: '🪜', tags: 'ladder' },
+  { char: '🪚', tags: 'saw' }, { char: '🪛', tags: 'screw' }, { char: '🪜', tags: 'wheel' }, { char: '🪝', tags: 'hook' }, { char: '🔭', tags: 'star' },
+  { char: '🔬', tags: 'micro' }, { char: '🛰️', tags: 'sat' }, { char: '🚀', tags: 'rocket' }, { char: '🛸', tags: 'ufo' }, { char: '🚁', tags: 'heli' },
+  { char: '🛶', tags: 'boat' }, { char: '⛵', tags: 'boat' }, { char: '🛥️', tags: 'boat' }, { char: '🚤', tags: 'boat' }, { char: '⛴️', tags: 'boat' },
+  { char: '🚢', tags: 'boat' }, { char: '⚓', tags: 'anchor' }, { char: '🛟', tags: 'life' }, { char: '🏗️', tags: 'build' }, { char: '🧱', tags: 'brick' },
+  { char: '🏘️', tags: 'house' }, { char: '🏚️', tags: 'house' }, { char: '🏠', tags: 'house' }, { char: '🏡', tags: 'house' }, { char: '🏢', tags: 'office' },
+  { char: '🏣', tags: 'post' }, { char: '🏤', tags: 'post' }, { char: '🏥', tags: 'med' }, { char: '🏦', tags: 'bank' }, { char: '🏨', tags: 'hotel' },
+  { char: '🏩', tags: 'hotel' }, { char: '🏪', tags: 'store' }, { char: '🏫', tags: 'school' }, { char: '🏬', tags: 'store' }, { char: '🏭', tags: 'factory' },
+  { char: '🏯', tags: 'castle' }, { char: '🏰', tags: 'castle' }, { char: '💒', tags: 'wedding' }, { char: '🗼', tags: 'tower' }, { char: '🗽', tags: 'liberty' },
+  { char: '⛪', tags: 'church' }, { char: '🕌', tags: 'mosque' }, { char: '🛕', tags: 'temple' }, { char: '🕍', tags: 'syn' }, { char: '⛩️', tags: 'shrine' },
+  { char: '🕋', tags: 'kaaba' }, { char: '⛲', tags: 'fount' }, { char: '⛺', tags: 'tent' }, { char: '🌁', tags: 'fog' }, { char: '🌃', tags: 'night' },
+  { char: '🏙️', tags: 'city' }, { char: '🌄', tags: 'sun' }, { char: '🌅', tags: 'sun' }, { char: '🌆', tags: 'city' }, { char: '🌇', tags: 'city' },
+  { char: '🌉', tags: 'bridge' }, { char: '♨️', tags: 'hot' }, { char: '🎠', tags: 'horse' }, { char: '🎡', tags: 'wheel' }, { char: '🎢', tags: 'ride' },
+  { char: '🚂', tags: 'train' }, { char: '🚃', tags: 'train' }, { char: '🚄', tags: 'train' }, { char: '🚅', tags: 'train' }, { char: '🚆', tags: 'train' },
+  { char: '🚇', tags: 'train' }, { char: '🚈', tags: 'train' }, { char: '🚉', tags: 'train' }, { char: '💨', tags: 'dash' }, { char: '🚴', tags: 'cycle' },
+  { char: '🤳', tags: 'selfie' }, { char: '🤙', tags: 'call' }, { char: '🤞', tags: 'luck' }, { char: '🤟', tags: 'love' }, { char: '🤘', tags: 'rock' },
+  { char: '🤛', tags: 'fist' }, { char: '🤜', tags: 'fist' }, { char: '🤲', tags: 'pray' }, { char: '🤝', tags: 'hand' }, { char: '🕵️', tags: 'spy' },
+  { char: '👮', tags: 'cop' }, { char: '👷', tags: 'build' }, { char: '💂', tags: 'guard' }, { char: '🕵️‍♀️', tags: 'spy' }, { char: '🕵️‍♂️', tags: 'spy' },
+  { char: '🤴', tags: 'king' }, { char: '👸', tags: 'queen' }, { char: '🧙', tags: 'wiz' }, { char: '🧙‍♀️', tags: 'wiz' }, { char: '🧙‍♂️', tags: 'wiz' },
+  { char: '🧚', tags: 'fairy' }, { char: '🧚‍♀️', tags: 'fairy' }, { char: '🧚‍♂️', tags: 'fairy' }, { char: '🧛', tags: 'vamp' }, { char: '🧛‍♀️', tags: 'vamp' },
+  { char: '🧛‍♂️', tags: 'vamp' }, { char: '🧜', tags: 'mer' }, { char: '🧜‍♀️', tags: 'mer' }, { char: '🧜‍♂️', tags: 'mer' }, { char: '🧝', tags: 'elf' },
+  { char: '🧝‍♀️', tags: 'elf' }, { char: '🧝‍♂️', tags: 'elf' }, { char: '🧞', tags: 'genie' }, { char: '🧞‍♀️', tags: 'genie' }, { char: '🧞‍♂️', tags: 'genie' },
+  { char: '🧟', tags: 'zomb' }, { char: '🧟‍♀️', tags: 'zomb' }, { char: '🧟‍♂️', tags: 'zomb' }, { char: '💆', tags: 'relax' }, { char: '💆‍♀️', tags: 'relax' },
+  { char: '💆‍♂️', tags: 'relax' }, { char: '💇', tags: 'cut' }, { char: '💇‍♀️', tags: 'cut' }, { char: '💇‍♂️', tags: 'cut' }, { char: '🚶', tags: 'walk' },
+  { char: '🚶‍♀️', tags: 'walk' }, { char: '🚶‍♂️', tags: 'walk' }, { char: '🏃', tags: 'run' }, { char: '🏃‍♀️', tags: 'run' }, { char: '🏃‍♂️', tags: 'run' },
+  { char: '💃', tags: 'dance' }, { char: '🕺', tags: 'dance' }, { char: '🕴️', tags: 'suit' }, { char: '👯', tags: 'twin' }, { char: '👯‍♀️', tags: 'twin' },
+  { char: '👯‍♂️', tags: 'twin' }, { char: '🧗', tags: 'climb' }, { char: '🧗‍♀️', tags: 'climb' }, { char: '🧗‍♂️', tags: 'climb' }, { char: '🧘', tags: 'zen' },
+  { char: '🧘‍♀️', tags: 'zen' }, { char: '🧘‍♂️', tags: 'zen' }, { char: '🛀', tags: 'bath' }, { char: '🛌', tags: 'sleep' }, { char: '🗣️', tags: 'talk' },
+  { char: '👤', tags: 'user' }, { char: '👥', tags: 'users' }, { char: '🫂', tags: 'hug' }, { char: '🏇', tags: 'horse' }, { char: '⛷️', tags: 'ski' },
+  { char: '🏂', tags: 'snow' }, { char: '🏌️', tags: 'golf' }, { char: '🏌️‍♀️', tags: 'golf' }, { char: '🏌️‍♂️', tags: 'golf' }, { char: '🏄', tags: 'surf' },
+  { char: '🏄‍♀️', tags: 'surf' }, { char: '🏄‍♂️', tags: 'surf' }, { char: '🚣', tags: 'boat' }, { char: '🚣‍♀️', tags: 'boat' }, { char: '🚣‍♂️', tags: 'boat' },
+  { char: '🏊', tags: 'swim' }, { char: '🏊‍♀️', tags: 'swim' }, { char: '🏊‍♂️', tags: 'swim' }, { char: '⛹️', tags: 'ball' }, { char: '⛹️‍♀️', tags: 'ball' },
+  { char: '⛹️‍♂️', tags: 'ball' }, { char: '🏋️', tags: 'lift' }, { char: '🏋️‍♀️', tags: 'lift' }, { char: '🏋️‍♂️', tags: 'lift' }, { char: '🚴', tags: 'cycle' },
+  { char: '🚴‍♀️', tags: 'cycle' }, { char: '🚴‍♂️', tags: 'cycle' }, { char: '🚵', tags: 'mtb' }, { char: '🚵‍♀️', tags: 'mtb' }, { char: '🚵‍♂️', tags: 'mtb' },
+  { char: '🏎️', tags: 'car' }, { char: '🏍️', tags: 'moto' }, { char: '🤸', tags: 'flip' }, { char: '🤸‍♀️', tags: 'flip' }, { char: '🤸‍♂️', tags: 'flip' },
+  { char: '🤼', tags: 'wres' }, { char: '🤼‍♀️', tags: 'wres' }, { char: '🤼‍♂️', tags: 'wres' }, { char: '🤽', tags: 'water' }, { char: '🤽‍♀️', tags: 'water' },
+  { char: '🤽‍♂️', tags: 'water' }, { char: '🤾', tags: 'hand' }, { char: '🤾‍♀️', tags: 'hand' }, { char: '🤾‍♂️', tags: 'hand' }, { char: '🤹', tags: 'jugg' },
+  { char: '🤹‍♀️', tags: 'jugg' }, { char: '🤹‍♂️', tags: 'jugg' }, { char: '🧗', tags: 'climb' }, { char: '🧗‍♀️', tags: 'climb' }, { char: '🧗‍♂️', tags: 'climb' },
+  { char: '🤺', tags: 'sword' }, { char: '🏇', tags: 'horse' }, { char: '⛷️', tags: 'ski' }, { char: '🏂', tags: 'snow' }, { char: '🏌️', tags: 'golf' },
+  { char: '🏌️‍♀️', tags: 'golf' }, { char: '🏌️‍♂️', tags: 'golf' }, { char: '🏄', tags: 'surf' }, { char: '🏄‍♀️', tags: 'surf' }, { char: '🏄‍♂️', tags: 'surf' },
+  { char: '🚣', tags: 'boat' }, { char: '🚣‍♀️', tags: 'boat' }, { char: '🚣‍♂️', tags: 'boat' }, { char: '🏊', tags: 'swim' }, { char: '🏊‍♀️', tags: 'swim' },
+  { char: '🏊‍♂️', tags: 'swim' }, { char: '⛹️', tags: 'ball' }, { char: '⛹️‍♀️', tags: 'ball' }, { char: '⛹️‍♂️', tags: 'ball' }, { char: '🏋️', tags: 'lift' },
+  { char: '🏋️‍♀️', tags: 'lift' }, { char: '🏋️‍♂️', tags: 'lift' }, { char: '🚴', tags: 'cycle' }, { char: '🚴‍♀️', tags: 'cycle' }, { char: '🚴‍♂️', tags: 'cycle' },
+  { char: '🚵', tags: 'mtb' }, { char: '🚵‍♀️', tags: 'mtb' }, { char: '🚵‍♂️', tags: 'mtb' }, { char: '🏎️', tags: 'car' }, { char: '🏍️', tags: 'moto' },
+  { char: '🤸', tags: 'flip' }, { char: '🤸‍♀️', tags: 'flip' }, { char: '🤸‍♂️', tags: 'flip' }, { char: '🤼', tags: 'wres' }, { char: '🤼‍♀️', tags: 'wres' },
+  { char: '🤼‍♂️', tags: 'wres' }, { char: '🤽', tags: 'water' }, { char: '🤽‍♀️', tags: 'water' }, { char: '🤽‍♂️', tags: 'water' }, { char: '🤾', tags: 'hand' },
+  { char: '🤾‍♀️', tags: 'hand' }, { char: '🤾‍♂️', tags: 'hand' }, { char: '🤹', tags: 'jugg' }, { char: '🤹‍♀️', tags: 'jugg' }, { char: '🤹‍♂️', tags: 'jugg' },
+  { char: '🧗', tags: 'climb' }, { char: '🧗‍♀️', tags: 'climb' }, { char: '🧗‍♂️', tags: 'climb' }, { char: '🤺', tags: 'sword' }, { char: '🏇', tags: 'horse' },
+  { char: '⛷️', tags: 'ski' }, { char: '🏂', tags: 'snow' }, { char: '🏌️', tags: 'golf' }, { char: '🏌️‍♀️', tags: 'golf' }, { char: '🏌️‍♂️', tags: 'golf' },
+  { char: '🏄', tags: 'surf' }, { char: '🏄‍♀️', tags: 'surf' }, { char: '🏄‍♂️', tags: 'surf' }, { char: '🚣', tags: 'boat' }, { char: '🚣‍♀️', tags: 'boat' },
+  { char: '🚣‍♂️', tags: 'boat' }, { char: '🏊', tags: 'swim' }, { char: '🏊‍♀️', tags: 'swim' }, { char: '🏊‍♂️', tags: 'swim' }, { char: '⛹️', tags: 'ball' },
+  { char: '⛹️‍♀️', tags: 'ball' }, { char: '⛹️‍♂️', tags: 'ball' }, { char: '🏋️', tags: 'lift' }, { char: '🏋️‍♀️', tags: 'lift' }, { char: '🏋️‍♂️', tags: 'lift' },
+  { char: '🚴', tags: 'cycle' }, { char: '🚴‍♀️', tags: 'cycle' }, { char: '🚴‍♂️', tags: 'cycle' }, { char: '🚵', tags: 'mtb' }, { char: '🚵‍♀️', tags: 'mtb' },
+  { char: '🚵‍♂️', tags: 'mtb' }, { char: '🏎️', tags: 'car' }, { char: '🏍️', tags: 'moto' }, { char: '🤸', tags: 'flip' }, { char: '🤸‍♀️', tags: 'flip' },
+  { char: '🤸‍♂️', tags: 'flip' }, { char: '🤼', tags: 'wres' }, { char: '🤼‍♀️', tags: 'wres' }, { char: '🤼‍♂️', tags: 'wres' }, { char: '🤽', tags: 'water' },
+  { char: '🤽‍♀️', tags: 'water' }, { char: '🤽‍♂️', tags: 'water' }, { char: '🤾', tags: 'hand' }, { char: '🤾‍♀️', tags: 'hand' }, { char: '🤾‍♂️', tags: 'hand' },
+  { char: '🤹', tags: 'jugg' }, { char: '🤹‍♀️', tags: 'jugg' }, { char: '🤹‍♂️', tags: 'jugg' }, { char: '🧗', tags: 'climb' }, { char: '🧗‍♀️', tags: 'climb' },
+  { char: '🧗‍♂️', tags: 'climb' }, { char: '🤺', tags: 'sword' }, { char: '🏇', tags: 'horse' }, { char: '⛷️', tags: 'ski' }, { char: '🏂', tags: 'snow' },
+  { char: '🏌️', tags: 'golf' }, { char: '🏌️‍♀️', tags: 'golf' }, { char: '🏌️‍♂️', tags: 'golf' }, { char: '🏄', tags: 'surf' }, { char: '🏄‍♀️', tags: 'surf' },
+  { char: '🏄‍♂️', tags: 'surf' }, { char: '🚣', tags: 'boat' }, { char: '🚣‍♀️', tags: 'boat' }, { char: '🚣‍♂️', tags: 'boat' }, { char: '🏊', tags: 'swim' },
+  { char: '🏊‍♀️', tags: 'swim' }, { char: '🏊‍♂️', tags: 'swim' }, { char: '⛹️', tags: 'ball' }, { char: '⛹️‍♀️', tags: 'ball' }, { char: '⛹️‍♂️', tags: 'ball' },
+  { char: '🏋️', tags: 'lift' }, { char: '🏋️‍♀️', tags: 'lift' }, { char: '🏋️‍♂️', tags: 'lift' }, { char: '🚴', tags: 'cycle' }, { char: '🚴‍♀️', tags: 'cycle' },
+  { char: '🚴‍♂️', tags: 'cycle' }, { char: '🚵', tags: 'mtb' }, { char: '🚵‍♀️', tags: 'mtb' }, { char: '🚵‍♂️', tags: 'mtb' }, { char: '🏎️', tags: 'car' },
+  { char: '🏍️', tags: 'moto' }, { char: '🤸', tags: 'flip' }, { char: '🤸‍♀️', tags: 'flip' }, { char: '🤸‍♂️', tags: 'flip' }, { char: '🤼', tags: 'wres' },
+  { char: '🤼‍♀️', tags: 'wres' }, { char: '🤼‍♂️', tags: 'wres' }, { char: '🤽', tags: 'water' }, { char: '🤽‍♀️', tags: 'water' }, { char: '🤽‍♂️', tags: 'water' },
+  { char: '🤾', tags: 'hand' }, { char: '🤾‍♀️', tags: 'hand' }, { char: '🤾‍♂️', tags: 'hand' }, { char: '🤹', tags: 'jugg' }, { char: '🤹‍♀️', tags: 'jugg' },
+  { char: '🤹‍♂️', tags: 'jugg' }, { char: '🧗', tags: 'climb' }, { char: '🧗‍♀️', tags: 'climb' }, { char: '🧗‍♂️', tags: 'climb' }, { char: '🤺', tags: 'sword' },
+  { char: '🦁', tags: 'animal cat' }, { char: '🐯', tags: 'animal cat' }, { char: '🐆', tags: 'animal cat' }, { char: '🦓', tags: 'animal' }, { char: '🐘', tags: 'animal' },
+  { char: '🦒', tags: 'animal' }, { char: '🦘', tags: 'animal' }, { char: '🐨', tags: 'animal' }, { char: '🐼', tags: 'animal' }, { char: '🐻', tags: 'animal' },
+  { char: '🦊', tags: 'animal' }, { char: '🐰', tags: 'animal' }, { char: '🐹', tags: 'animal' }, { char: '🐭', tags: 'animal' }, { char: '🐱', tags: 'animal cat' },
+  { char: '🐈', tags: 'animal cat' }, { char: '🐶', tags: 'animal dog' }, { char: '🐕', tags: 'animal dog' }, { char: '🐩', tags: 'animal dog' }, { char: '🐺', tags: 'animal' },
+  { char: '🦄', tags: 'animal' }, { char: '🦓', tags: 'animal' }, { char: '🐴', tags: 'animal' }, { char: '🐎', tags: 'animal' }, { char: '🦌', tags: 'animal' },
+  { char: '🐄', tags: 'animal' }, { char: '🐂', tags: 'animal' }, { char: '🐃', tags: 'animal' }, { char: '🐮', tags: 'animal' }, { char: '🐖', tags: 'animal' },
+  { char: '🐗', tags: 'animal' }, { char: '🐑', tags: 'animal' }, { char: '🐏', tags: 'animal' }, { char: '🐐', tags: 'animal' }, { char: '🐪', tags: 'animal' },
+  { char: '🐫', tags: 'animal' }, { char: '🦙', tags: 'animal' }, { char: '🦒', tags: 'animal' }, { char: '🐘', tags: 'animal' }, { char: '🦏', tags: 'animal' },
+  { char: '🦛', tags: 'animal' }, { char: '🐭', tags: 'animal' }, { char: '🐁', tags: 'animal' }, { char: '🐀', tags: 'animal' }, { char: '🐹', tags: 'animal' },
+  { char: '🐰', tags: 'animal' }, { char: '🐇', tags: 'animal' }, { char: '🐿️', tags: 'animal' }, { char: '🦔', tags: 'animal' }, { char: '🦇', tags: 'animal' },
+  { char: '🐻', tags: 'animal' }, { char: '🐨', tags: 'animal' }, { char: '🐼', tags: 'animal' }, { char: '🐾', tags: 'animal' }, { char: '🦃', tags: 'bird' },
+  { char: '🐔', tags: 'bird' }, { char: '🐓', tags: 'bird' }, { char: '🐣', tags: 'bird' }, { char: '🐤', tags: 'bird' }, { char: '🐥', tags: 'bird' },
+  { char: '🐦', tags: 'bird' }, { char: '🐧', tags: 'bird' }, { char: '🕊️', tags: 'bird' }, { char: '🦅', tags: 'bird' }, { char: '🦆', tags: 'bird' },
+  { char: '🦉', tags: 'bird' }, { char: '🐸', tags: 'animal' }, { char: '🐊', tags: 'animal' }, { char: '🐢', tags: 'animal' }, { char: '🦎', tags: 'animal' },
+  { char: '🐍', tags: 'animal' }, { char: '🐲', tags: 'animal' }, { char: '🐉', tags: 'animal' }, { char: '🦕', tags: 'animal' }, { char: '🦖', tags: 'animal' },
+  { char: '🐳', tags: 'fish' }, { char: '🐋', tags: 'fish' }, { char: '🐬', tags: 'fish' }, { char: '🐟', tags: 'fish' }, { char: '🐠', tags: 'fish' },
+  { char: '🐡', tags: 'fish' }, { char: '🦈', tags: 'fish' }, { char: '🐙', tags: 'fish' }, { char: '🐚', tags: 'fish' }, { char: '🦀', tags: 'fish' },
+  { char: '🦞', tags: 'fish' }, { char: '🦐', tags: 'fish' }, { char: '🦑', tags: 'fish' }, { char: '🐌', tags: 'bug' }, { char: '🦋', tags: 'bug' },
+  { char: '🐛', tags: 'bug' }, { char: '🐜', tags: 'bug' }, { char: '🐝', tags: 'bug' }, { char: '🐞', tags: 'bug' }, { char: '🦗', tags: 'bug' },
+  { char: '🕷️', tags: 'bug' }, { char: '🕸️', tags: 'bug' }, { char: '🦂', tags: 'bug' }, { char: '🦟', tags: 'bug' }, { char: '🏵️', tags: 'flower' },
+  { char: '🌹', tags: 'flower' }, { char: '🥀', tags: 'flower' }, { char: '🌺', tags: 'flower' }, { char: '🌻', tags: 'flower' }, { char: '🌼', tags: 'flower' },
+  { char: '🌷', tags: 'flower' }, { char: '🌱', tags: 'plant' }, { char: '🌲', tags: 'tree' }, { char: '🌳', tags: 'tree' }, { char: '🌴', tags: 'tree' },
+  { char: '🌵', tags: 'plant' }, { char: '🌾', tags: 'plant' }, { char: '🌿', tags: 'plant' }, { char: '☘️', tags: 'plant' }, { char: '🍀', tags: 'plant' },
+  { char: '🍁', tags: 'leaf' }, { char: '🍂', tags: 'leaf' }, { char: '🍃', tags: 'leaf' }, { char: '🍄', tags: 'plant' }, { char: '🌍', tags: 'earth' },
+  { char: '🌎', tags: 'earth' }, { char: '🌏', tags: 'earth' }, { char: '🌐', tags: 'earth' }, { char: '🗺️', tags: 'map' }, { char: '🗾', tags: 'map' },
+  { char: '🌋', tags: 'mt' }, { char: '🏔️', tags: 'mt' }, { char: '⛰️', tags: 'mt' }, { char: '🏔️', tags: 'mt' }, { char: '🗻', tags: 'mt' },
+  { char: '🏕️', tags: 'camp' }, { char: '🏖️', tags: 'beach' }, { char: '🏜️', tags: 'desert' }, { char: '🏝️', tags: 'island' }, { char: '🏞️', tags: 'park' },
+];
+
+const Header = () => {
+    const navigate = useNavigate();
+    const user = JSON.parse(localStorage.getItem('user'));
+
+    const handleLogout = () => {
+        localStorage.removeItem('access');
+        localStorage.removeItem('refresh');
+        localStorage.removeItem('user');
+        navigate('/');
+    };
+
+    return (
+        <header className="header">
+            <div className="container header-content">
+                <Link to="/" className="logo">
+                    CCHAT<span>.</span>
+                </Link>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                    <div className="live-status">
+                        <Radio size={16} color="#FF4B5C" /> 6 LIVE
+                    </div>
+                    {user ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                            <Link to="/messages" style={{ color: 'var(--text-color)', display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+                                <MessageCircle size={24} />
+                            </Link>
+                        </div>
+                    ) : (
+                        <Link to="/login" className="badge" style={{ textDecoration: 'none' }}>LOGIN</Link>
+                    )}
+                </div>
+            </div>
+        </header>
+    );
+};
 
 const getInitials = (name) => {
   if (!name || name === 'ShadowWave') return '?';
@@ -84,7 +248,7 @@ const ThreadCard = ({ thread }) => {
               >
                 {getInitials(p.username)}
               </div>
-              <span className="participant-name">{p.username}</span>
+              <span className="participant-name" style={{ color: getAvatarStyle(p.username, i).background }}>{p.username}</span>
             </div>
             {i < participants.length - 1 && <span style={{ opacity: 0.3, fontWeight: 900, margin: '0 0.5rem' }}>×</span>}
           </React.Fragment>
@@ -101,9 +265,9 @@ const ThreadCard = ({ thread }) => {
       </div>
       <div className="thread-footer">
         <div className="reactions">
-          <div className="reaction-pill"><Flame size={14} fill="#F97316" color="#F97316" /> {thread.likes || 26}</div>
-          <div className="reaction-pill"><Skull size={14} /> {thread.dislikes || 16}</div>
-          <div className="reaction-pill"><Heart size={14} fill="#FF4B5C" color="#FF4B5C" /> {thread.caps || 36}</div>
+          <div className="reaction-pill"><Flame size={14} fill="#F97316" color="#F97316" /> {thread.likes ?? 0}</div>
+          <div className="reaction-pill"><Skull size={14} /> {thread.dislikes ?? 0}</div>
+          <div className="reaction-pill"><Heart size={14} fill="#FF4B5C" color="#FF4B5C" /> {thread.caps ?? 0}</div>
         </div>
         <div className="thread-meta">
           <Eye size={14} /> {thread.views || '3,872'}
@@ -199,9 +363,12 @@ const LandingPage = () => {
   useEffect(() => {
     const fetchThreads = async () => {
       try {
-        const response = await axios.get('/api/chats/recommended/');
+        const token = localStorage.getItem('access');
+        const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        const response = await axios.get('/api/chats/recommended/', config);
         if (response.data && response.data.length > 0) {
           setThreads(response.data);
+          localStorage.setItem('recommended_chats_ids', JSON.stringify(response.data.map(t => t.conversation_id)));
         } else {
           setThreads(mockThreads);
         }
@@ -430,18 +597,103 @@ const ChatPage = () => {
   const [messages, setMessages] = useState([]);
   const [chatData, setChatData] = useState(null);
   const [socket, setSocket] = useState(null);
-  const [direction, setDirection] = useState(1); // 1 = next (down), -1 = prev (up)
+  const [floatingReactions, setFloatingReactions] = useState([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+  const [emojiSearchQuery, setEmojiSearchQuery] = useState('');
   const messagesRef = useRef(null);
+
+  const spawnFloatingReaction = (type) => {
+    const id = Date.now() + Math.random();
+    
+    // Map reaction types to their approximate horizontal positions
+    const positions = {
+      'like': 22,
+      'dislike': 40,
+      'cap': 58,
+      'smile': 76
+    };
+    
+    // Add jitter so multiple clicks don't overlap perfectly
+    const basePercent = positions[type] || 50;
+    const jitter = (Math.random() * 8) - 4; // +/- 4%
+    const x = basePercent + jitter;
+    
+    setFloatingReactions(prev => [...prev, { id, type, x }]);
+    setTimeout(() => {
+      setFloatingReactions(prev => prev.filter(r => r.id !== id));
+    }, 4000);
+  };
+
+  const handleEmojiSelect = (emoji) => {
+    setMessageInput(prev => prev + emoji);
+  };
+
+  const uploadFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('attachment', file);
+    formData.append('conversation', id);
+    formData.append('text', file.name); // Default text is filename
+
+    // Detect type
+    let type = 'file';
+    if (file.type.startsWith('image/')) type = 'image';
+    else if (file.type.startsWith('audio/')) type = 'audio';
+    formData.append('message_type', type);
+
+    try {
+      const token = localStorage.getItem('access');
+      const res = await axios.post('/api/messages/', formData, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      // Send via socket to notify others
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'send_message',
+          text: file.name,
+          chatId: id,
+          message_type: type,
+          attachment: res.data.attachment
+        }));
+      }
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("File upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
   const isNavigatingRef = useRef(false);
 
-  const currentIdIndex = availableIds.indexOf(Number(id));
+  const currentIdIndexRaw = (() => {
+    const cached = localStorage.getItem('recommended_chats_ids');
+    const dynamicIds = cached ? JSON.parse(cached) : availableIds;
+    const index = dynamicIds.indexOf(Number(id));
+    return index !== -1 ? index : 0;
+  })();
+
+  const getDynamicIds = () => {
+      const cached = localStorage.getItem('recommended_chats_ids');
+      return cached ? JSON.parse(cached) : availableIds;
+  };
 
   const goNext = () => {
     if (isNavigatingRef.current) return;
     isNavigatingRef.current = true;
     setDirection(1);
-    const nextIndex = (currentIdIndex + 1) % availableIds.length;
-    navigate(`/chat/${availableIds[nextIndex]}`);
+    const dynamicIds = getDynamicIds();
+    const currentIdIndex = dynamicIds.indexOf(Number(id)) !== -1 ? dynamicIds.indexOf(Number(id)) : 0;
+    const nextIndex = (currentIdIndex + 1) % dynamicIds.length;
+    navigate(`/chat/${dynamicIds[nextIndex]}`);
     setTimeout(() => { isNavigatingRef.current = false; }, 700);
   };
 
@@ -449,8 +701,10 @@ const ChatPage = () => {
     if (isNavigatingRef.current) return;
     isNavigatingRef.current = true;
     setDirection(-1);
-    const prevIndex = (currentIdIndex - 1 + availableIds.length) % availableIds.length;
-    navigate(`/chat/${availableIds[prevIndex]}`);
+    const dynamicIds = getDynamicIds();
+    const currentIdIndex = dynamicIds.indexOf(Number(id)) !== -1 ? dynamicIds.indexOf(Number(id)) : 0;
+    const prevIndex = (currentIdIndex - 1 + dynamicIds.length) % dynamicIds.length;
+    navigate(`/chat/${dynamicIds[prevIndex]}`);
     setTimeout(() => { isNavigatingRef.current = false; }, 700);
   };
 
@@ -492,7 +746,7 @@ const ChatPage = () => {
 
     window.addEventListener('wheel', handleWheel, { passive: true });
     return () => window.removeEventListener('wheel', handleWheel);
-  }, [id, currentIdIndex]);
+  }, [id]);
 
   useEffect(() => {
     const mock = mockChatData[id];
@@ -503,9 +757,49 @@ const ChatPage = () => {
 
     const fetchMessages = async () => {
       try {
-        const response = await axios.get(`/api/conversations/${id}/`);
-        if (response.data.messages?.length > 0) {
-          setMessages(response.data.messages);
+        const token = localStorage.getItem('access');
+        const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        const response = await axios.get(`/api/conversations/${id}/`, config);
+        
+        if (response.data && response.data.conversation) {
+            const conv = response.data.conversation;
+            const participants = conv.participants || [];
+            
+            const newChatData = {
+                participants: participants.map((p, i) => {
+                    const uname = p.username || 'Anonymous';
+                    return {
+                        username: uname,
+                        handle: `@${uname.toLowerCase().replace(/\s+/g, '')}`,
+                        avatar: uname.slice(0, 2).toUpperCase(),
+                        color: i === 0 ? 'var(--accent-color)' : '#000'
+                    };
+                }),
+                status: 'ACTIVE',
+                created_at: conv.created_at || 'just now',
+                likes: conv.likes || 0,
+                dislikes: conv.dislikes || 0,
+                caps: conv.caps || 0,
+                smiles: conv.smiles || 0,
+                views: conv.views || 0,
+                watching: 1,
+                user_reactions: conv.user_reactions || [],
+                otherChats: { left: [], right: [] }
+            };
+            
+            if (newChatData.participants.length < 2) {
+                newChatData.participants.push({ username: 'ANON', handle: '@anon', avatar: 'AN', color: '#000' });
+            }
+            
+            setChatData(newChatData);
+            
+            if (response.data.messages) {
+               setMessages(response.data.messages.map(m => ({
+                   sender: m.sender_username || 'ANON',
+                   text: m.text
+               })));
+            }
+            return;
         }
       } catch (error) {
         console.log("Using mock data for chat", id);
@@ -521,11 +815,52 @@ const ChatPage = () => {
           sender: data.sender_username || 'ANON',
           text: data.text
         }]);
+      } else if (data.type === 'receive_conversation_reaction') {
+        spawnFloatingReaction(data.reactionType);
       }
     };
     setSocket(ws);
     return () => ws.close();
   }, [id]);
+
+  const handleReaction = async (type) => {
+    const token = localStorage.getItem('access');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    // Trigger local animation immediately
+    spawnFloatingReaction(type);
+    
+    // Broadcast via socket
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'conversation_reaction',
+        reactionType: type,
+        chatId: id
+      }));
+    }
+
+    try {
+      const res = await axios.post(`/api/conversations/${id}/react/`, 
+        { reaction_type: type },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      const conv = res.data;
+      setChatData(prev => ({
+        ...prev,
+        likes: conv.likes,
+        dislikes: conv.dislikes,
+        caps: conv.caps,
+        smiles: conv.smiles,
+        user_reactions: conv.user_reactions
+      }));
+    } catch (err) {
+      console.error("Failed to react:", err);
+    }
+  };
 
   if (!chatData) return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', fontFamily: 'var(--font-mono)', fontWeight: 900 }}>
@@ -581,7 +916,7 @@ const ChatPage = () => {
           }}
         >
           <div className="chat-page-layout" style={{ flex: 1, minHeight: 0 }}>
-
+          <div className="chat-content-container" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {/* Left sidebar */}
             <ProfileSidebar participant={p1} otherChats={chatData.otherChats.left} messageCount={p1MsgCount} />
 
@@ -605,8 +940,43 @@ const ChatPage = () => {
               <div
                 className="chat-messages-list"
                 ref={messagesRef}
-                style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}
+                style={{ flex: 1, overflowY: 'auto', minHeight: 0, position: 'relative' }}
               >
+                <AnimatePresence>
+                  {floatingReactions.map(r => (
+                    <motion.div
+                      key={r.id}
+                      initial={{ y: 0, x: `${r.x}%`, opacity: 0, scale: 0.5 }}
+                      animate={{ 
+                        y: -500, 
+                        opacity: [0, 1, 1, 0], 
+                        scale: [0.5, 1.4, 1.2, 0.6],
+                        x: [
+                          `${r.x}%`, 
+                          `${r.x + (Math.random() * 20 - 10)}%`, // sway left/right
+                          `${r.x + (Math.random() * 30 - 15)}%`, // sway further
+                          `${r.x + (Math.random() * 20 - 10)}%`  // come back slightly
+                        ] 
+                      }}
+                      transition={{ duration: 4, ease: "easeOut" }}
+                      style={{
+                        position: 'absolute',
+                        bottom: 40,
+                        zIndex: 10,
+                        pointerEvents: 'none',
+                        color: r.type === 'like' ? '#3B82F6' : 
+                               r.type === 'dislike' ? '#4B5563' : 
+                               r.type === 'cap' ? '#FF4B5C' : '#F59E0B'
+                      }}
+                    >
+                      {r.type === 'like' && <ThumbsUp size={32} fill="#3B82F6" stroke="#fff" strokeWidth={1.5} />}
+                      {r.type === 'dislike' && <Skull size={32} fill="#4B5563" stroke="#fff" strokeWidth={1.5} />}
+                      {r.type === 'cap' && <Heart size={32} fill="#FF4B5C" stroke="#fff" strokeWidth={1.5} />}
+                      {r.type === 'smile' && <Laugh size={32} fill="#F59E0B" stroke="#fff" strokeWidth={1.5} />}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+
                 {messages.map((msg, i) => (
                   <motion.div
                     key={i}
@@ -615,15 +985,65 @@ const ChatPage = () => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.05 + (i * 0.04), duration: 0.25 }}
                   >
-                    <div className="chat-msg-content">
-                      <span className="chat-msg-sender">{msg.sender || msg.sender_username || 'ANON'}:</span>
-                      <span className="chat-msg-text">{msg.text}</span>
-                    </div>
-                    <div className="chat-msg-actions">
-                      <span className="chat-action">+ react</span>
-                      <MessageCircle size={12} />
-                      <span>{Math.floor(Math.random() * 3)} ∨</span>
-                    </div>
+                  {(() => {
+                    const senderName = msg.sender || msg.sender_username || 'ANON';
+                    const senderUpper = senderName.toUpperCase();
+                    const p1 = chatData.participants[0];
+                    const isP1 = p1.username.toUpperCase().includes(senderUpper) || 
+                                 senderUpper.includes(p1.username.toUpperCase()) || 
+                                 p1.avatar.toUpperCase() === senderUpper;
+                    const participant = isP1 ? p1 : chatData.participants[1];
+                    const color = participant ? participant.color : 'var(--accent-color)';
+                    
+                    return (
+                      <div className="chat-msg-container">
+                        <div className="chat-msg-line">
+                          <span className="chat-msg-sender" style={{ color }}>{senderName} :</span>
+                          {msg.message_type === 'image' ? (
+                            <div className="chat-image-msg" style={{ marginTop: 8 }}>
+                              <img 
+                                src={msg.attachment} 
+                                alt="shared" 
+                                style={{ 
+                                  maxWidth: '100%', 
+                                  maxHeight: 300,
+                                  borderRadius: 4, 
+                                  border: '3px solid #000',
+                                  boxShadow: '4px 4px 0 #000'
+                                }} 
+                              />
+                            </div>
+                          ) : msg.message_type === 'audio' ? (
+                            <div className="chat-audio-msg" style={{ 
+                              marginTop: 8, 
+                              background: '#000', 
+                              color: '#fff', 
+                              padding: '12px',
+                              borderRadius: 4,
+                              border: '3px solid var(--accent-color)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 12,
+                              minWidth: 200
+                            }}>
+                              <Music size={24} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 10, fontWeight: 900, marginBottom: 4 }}>{msg.text}</div>
+                                <audio controls src={msg.attachment} style={{ width: '100%', height: 30 }} />
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="chat-msg-text">{msg.text}</span>
+                          )}
+                        </div>
+                        <div className="chat-msg-actions">
+                          <span className="chat-action">+ react</span>
+                          <MessageCircle size={12} />
+                          <span>0 ∨</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   </motion.div>
                 ))}
 
@@ -636,19 +1056,165 @@ const ChatPage = () => {
               {/* Reactions bar pinned at bottom of center column */}
               <div className="chat-reactions-bar">
                 <div className="reactions">
-                  <div className="reaction-pill"><ThumbsUp size={14} /> {chatData.likes}</div>
-                  <div className="reaction-pill"><Skull size={14} /> {chatData.dislikes}</div>
-                  <div className="reaction-pill active"><Heart size={14} fill="#fff" color="#fff" /> {chatData.caps}</div>
-                  <div className="reaction-pill"><Smile size={14} /> {chatData.smiles}</div>
+                  <div 
+                    className={`reaction-pill ${chatData.user_reactions?.includes('like') ? 'active' : ''}`}
+                    onClick={() => handleReaction('like')}
+                    style={{ 
+                      cursor: 'pointer',
+                      background: chatData.user_reactions?.includes('like') ? 'rgba(59, 130, 246, 0.1)' : '#fff',
+                      borderColor: chatData.user_reactions?.includes('like') ? '#3B82F6' : '#000',
+                      borderWidth: '2px',
+                      color: chatData.user_reactions?.includes('like') ? '#3B82F6' : '#000'
+                    }}
+                  >
+                    <ThumbsUp size={14} fill={chatData.user_reactions?.includes('like') ? "#3B82F6" : "transparent"} stroke={chatData.user_reactions?.includes('like') ? "#fff" : "#000"} strokeWidth={2} /> {chatData.likes}
+                  </div>
+                  <div 
+                    className={`reaction-pill ${chatData.user_reactions?.includes('dislike') ? 'active' : ''}`}
+                    onClick={() => handleReaction('dislike')}
+                    style={{ 
+                      cursor: 'pointer',
+                      background: chatData.user_reactions?.includes('dislike') ? 'rgba(75, 85, 99, 0.1)' : '#fff',
+                      borderColor: chatData.user_reactions?.includes('dislike') ? '#4B5563' : '#000',
+                      borderWidth: '2px',
+                      color: chatData.user_reactions?.includes('dislike') ? '#4B5563' : '#000'
+                    }}
+                  >
+                    <Skull size={14} fill={chatData.user_reactions?.includes('dislike') ? "#4B5563" : "transparent"} stroke={chatData.user_reactions?.includes('dislike') ? "#fff" : "#000"} strokeWidth={2} /> {chatData.dislikes}
+                  </div>
+                  <div 
+                    className={`reaction-pill ${chatData.user_reactions?.includes('cap') ? 'active' : ''}`}
+                    onClick={() => handleReaction('cap')}
+                    style={{ 
+                      cursor: 'pointer',
+                      background: chatData.user_reactions?.includes('cap') ? 'rgba(255, 75, 92, 0.1)' : '#fff',
+                      borderColor: chatData.user_reactions?.includes('cap') ? '#FF4B5C' : '#000',
+                      borderWidth: '2px',
+                      color: chatData.user_reactions?.includes('cap') ? '#FF4B5C' : '#000'
+                    }}
+                  >
+                    <Heart size={14} fill={chatData.user_reactions?.includes('cap') ? "#FF4B5C" : "transparent"} stroke={chatData.user_reactions?.includes('cap') ? "#fff" : "#000"} strokeWidth={2} /> {chatData.caps}
+                  </div>
+                  <div 
+                    className={`reaction-pill ${chatData.user_reactions?.includes('smile') ? 'active' : ''}`}
+                    onClick={() => handleReaction('smile')}
+                    style={{ 
+                      cursor: 'pointer',
+                      background: chatData.user_reactions?.includes('smile') ? 'rgba(245, 158, 11, 0.1)' : '#fff',
+                      borderColor: chatData.user_reactions?.includes('smile') ? '#F59E0B' : '#000',
+                      borderWidth: '2px',
+                      color: chatData.user_reactions?.includes('smile') ? '#F59E0B' : '#000'
+                    }}
+                  >
+                    <Laugh size={14} fill={chatData.user_reactions?.includes('smile') ? "#F59E0B" : "transparent"} stroke={chatData.user_reactions?.includes('smile') ? "#fff" : "#000"} strokeWidth={2} /> {chatData.smiles}
+                  </div>
                 </div>
                 <div className="chat-views-info">
                   <Eye size={14} /> {chatData.views} &nbsp; <Users size={14} /> {chatData.watching} watching
                 </div>
               </div>
+
+              {/* Input bar pinned at the absolute bottom of page */}
+              <div className="chat-input-bar">
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  style={{ display: 'none' }} 
+                  onChange={uploadFile}
+                  accept="image/*,audio/*"
+                />
+                
+                <button 
+                  className="input-action-btn" 
+                  onClick={() => fileInputRef.current.click()}
+                  disabled={uploading}
+                >
+                  <Plus size={20} />
+                </button>
+
+                <div style={{ position: 'relative' }}>
+                  <button 
+                    className={`input-action-btn ${showEmojiPicker ? 'active' : ''}`}
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    style={{ background: showEmojiPicker ? 'var(--accent-color)' : 'none' }}
+                  >
+                    <Laugh size={20} color={showEmojiPicker ? '#fff' : '#000'} />
+                  </button>
+                </div>
+
+                <input 
+                  type="text" 
+                  placeholder={uploading ? "UPLOADING FILE..." : "TYPE A MESSAGE..."}
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                  disabled={uploading}
+                />
+                <button className="send-btn" onClick={sendMessage} disabled={uploading}>
+                  <Send size={20} />
+                </button>
+              </div>
             </div>
 
+            {/* Emoji Sidebar — Slides in from right */}
+            <AnimatePresence>
+              {showEmojiPicker && (
+                <motion.div 
+                  initial={{ x: '100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '100%' }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                  className="emoji-sidebar"
+                  style={{
+                    width: '280px',
+                    height: '100%',
+                    background: '#fff',
+                    borderLeft: '4px solid #000',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    zIndex: 20
+                  }}
+                >
+                  <div className="emoji-sidebar-header" style={{ padding: '16px', borderBottom: '3px solid #000', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', fontWeight: 900 }}>EMOJIS<span>.</span></h3>
+                    <button onClick={() => setShowEmojiPicker(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                  </div>
+                  <div className="emoji-sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+                    {Object.entries(EMOJI_LIBRARY).map(([category, emojis]) => (
+                      <div key={category} style={{ marginBottom: '20px' }}>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: '#888', marginBottom: '8px', letterSpacing: '2px' }}>{category}</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                          {emojis.map(e => (
+                            <button 
+                              key={e} 
+                              onClick={() => handleEmojiSelect(e)}
+                              className="emoji-btn-item"
+                              style={{ 
+                                background: 'none', 
+                                border: '2px solid #eee', 
+                                fontSize: '20px', 
+                                cursor: 'pointer',
+                                padding: '8px',
+                                borderRadius: '4px',
+                                transition: 'all 0.1s' 
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.borderColor = '#000'}
+                              onMouseLeave={e => e.currentTarget.style.borderColor = '#eee'}
+                            >
+                              {e}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Right sidebar */}
-            <ProfileSidebar participant={p2} otherChats={chatData.otherChats.right} messageCount={p2MsgCount} />
+            {!showEmojiPicker && <ProfileSidebar participant={p2} otherChats={chatData.otherChats.right} messageCount={p2MsgCount} />}
+          </div>
           </div>
         </motion.div>
       </AnimatePresence>
@@ -659,12 +1225,733 @@ const ChatPage = () => {
 };
 
 
+const LoginPage = () => {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const navigate = useNavigate();
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        try {
+            const response = await axios.post('/api/auth/login/', { username, password });
+            localStorage.setItem('access', response.data.tokens.access);
+            localStorage.setItem('refresh', response.data.tokens.refresh);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            navigate('/');
+        } catch (err) {
+            setError(err.response?.data?.error || 'Invalid username or password');
+        }
+    };
+
+    const handleGoogleSuccess = async (tokenResponse) => {
+        try {
+            const response = await axios.post('/api/auth/google/', { token: tokenResponse.access_token });
+            localStorage.setItem('access', response.data.tokens.access);
+            localStorage.setItem('refresh', response.data.tokens.refresh);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            navigate('/');
+        } catch (err) {
+            setError('Google Login failed. Please try again or use standard login.');
+            console.error('Google Auth Error:', err);
+        }
+    };
+
+    const loginWithGoogle = useGoogleLogin({
+        onSuccess: handleGoogleSuccess,
+        onError: () => setError('Google Login Failed')
+    });
+
+    return (
+        <div className="auth-container">
+            <Header />
+            <div className="auth-card">
+                <div className="auth-header">
+                    <h2>LOGIN<span>.</span></h2>
+                    <p>Enter the void.</p>
+                </div>
+                {error && <div className="auth-error">{error}</div>}
+                <form onSubmit={handleLogin} className="auth-form">
+                    <div className="input-group">
+                        <label>USERNAME</label>
+                        <input 
+                            type="text" 
+                            value={username} 
+                            onChange={(e) => setUsername(e.target.value)} 
+                            placeholder="neo_driver"
+                            required
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label>PASSWORD</label>
+                        <input 
+                            type="password" 
+                            value={password} 
+                            onChange={(e) => setPassword(e.target.value)} 
+                            placeholder="********"
+                            required
+                        />
+                    </div>
+                    <button type="submit" className="auth-button">ACCESS SYSTEM</button>
+                </form>
+                <div className="auth-divider">OR</div>
+                <button type="button" onClick={() => loginWithGoogle()} className="google-button">
+                    <svg className="google-icon" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    CONTINUE WITH GOOGLE
+                </button>
+                <div className="auth-footer">
+                    New here? <Link to="/register">Register Identity</Link>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const RegisterPage = () => {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [email, setEmail] = useState('');
+    const [error, setError] = useState('');
+    const navigate = useNavigate();
+
+    const handleRegister = async (e) => {
+        e.preventDefault();
+        try {
+            const response = await axios.post('/api/auth/register/', { username, password, email });
+            localStorage.setItem('access', response.data.tokens.access);
+            localStorage.setItem('refresh', response.data.tokens.refresh);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            navigate('/');
+        } catch (err) {
+            const detail = err.response?.data;
+            setError(detail?.username?.[0] || detail?.email?.[0] || detail?.password?.[0] || 'Registration failed');
+        }
+    };
+
+    const handleGoogleSuccess = async (tokenResponse) => {
+        try {
+            const response = await axios.post('/api/auth/google/', { token: tokenResponse.access_token });
+            localStorage.setItem('access', response.data.tokens.access);
+            localStorage.setItem('refresh', response.data.tokens.refresh);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            navigate('/');
+        } catch (err) {
+            setError('Google Login failed. Please try again or use standard register.');
+            console.error('Google Auth Error:', err);
+        }
+    };
+
+    const loginWithGoogle = useGoogleLogin({
+        onSuccess: handleGoogleSuccess,
+        onError: () => setError('Google Login Failed')
+    });
+
+    return (
+        <div className="auth-container">
+            <Header />
+            <div className="auth-card">
+                <div className="auth-header">
+                    <h2>REGISTER<span>.</span></h2>
+                    <p>Join the network.</p>
+                </div>
+                {error && <div className="auth-error">{error}</div>}
+                <form onSubmit={handleRegister} className="auth-form">
+                    <div className="input-group">
+                        <label>USERNAME</label>
+                        <input 
+                            type="text" 
+                            value={username} 
+                            onChange={(e) => setUsername(e.target.value)} 
+                            placeholder="neo_driver"
+                            required
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label>EMAIL</label>
+                        <input 
+                            type="email" 
+                            value={email} 
+                            onChange={(e) => setEmail(e.target.value)} 
+                            placeholder="neo@wave.net"
+                            required
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label>PASSWORD</label>
+                        <input 
+                            type="password" 
+                            value={password} 
+                            onChange={(e) => setPassword(e.target.value)} 
+                            placeholder="********"
+                            required
+                        />
+                    </div>
+                    <button type="submit" className="auth-button">INITIALIZE IDENTITY</button>
+                </form>
+                <div className="auth-divider">OR</div>
+                <button type="button" onClick={() => loginWithGoogle()} className="google-button">
+                    <svg className="google-icon" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    CONTINUE WITH GOOGLE
+                </button>
+                <div className="auth-footer">
+                    Already registered? <Link to="/login">Access System</Link>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const MessagesPage = () => {
+    const [conversations, setConversations] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [userResults, setUserResults] = useState([]);
+    const [searching, setSearching] = useState(false);
+    const [showDropdown, setShowDropdown] = useState(false);
+    
+    // Inline chat state
+    const [activeChatId, setActiveChatId] = useState(null);
+    const [chatData, setChatData] = useState(null);
+    const [messages, setMessages] = useState([]);
+    const [unreadCounts, setUnreadCounts] = useState({});
+    const [chatMessages, setChatMessages] = useState([]);
+    const [messageInput, setMessageInput] = useState('');
+    const [socket, setSocket] = useState(null);
+    const [floatingReactions, setFloatingReactions] = useState([]);
+    const messagesEndRef = useRef(null);
+    
+    const navigate = useNavigate();
+    const searchTimeoutRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [emojiSearchQuery, setEmojiSearchQuery] = useState('');
+
+    const commonEmojis = ['😂', '❤️', '🔥', '💀', '👍', '🙏', '💯', '✨', '🙌', '😮', '😢', '😍', '👏', '💔', '🤔'];
+
+    const handleLogout = () => {
+        localStorage.removeItem('access');
+        localStorage.removeItem('refresh');
+        localStorage.removeItem('user');
+        navigate('/login');
+    };
+
+    const handleEmojiSelect = (emoji) => {
+        setMessageInput(prev => prev + emoji);
+        setShowEmojiPicker(false);
+    };
+
+    const uploadFile = async (e) => {
+        const file = e.target.files[0];
+        if (!file || !activeChatId) return;
+
+        setUploading(true);
+        const formData = new FormData();
+        formData.append('attachment', file);
+        formData.append('conversation', activeChatId);
+        formData.append('text', file.name);
+
+        let type = 'file';
+        if (file.type.startsWith('image/')) type = 'image';
+        else if (file.type.startsWith('audio/')) type = 'audio';
+        formData.append('message_type', type);
+
+        try {
+            const token = localStorage.getItem('access');
+            const res = await axios.post('/api/messages/', formData, {
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+            
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'send_message',
+                    text: file.name,
+                    chatId: activeChatId,
+                    message_type: type,
+                    attachment: res.data.attachment
+                }));
+            }
+        } catch (err) {
+            console.error("Upload failed:", err);
+            alert("File upload failed.");
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+
+    useEffect(() => {
+        const token = localStorage.getItem('access');
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+
+        const fetchConversations = async () => {
+            try {
+                const token = localStorage.getItem('access');
+                const response = await axios.get('/api/conversations/', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                const convs = response.data.results || response.data;
+                setConversations(convs);
+
+                // Calculate unread status locally
+                const unreads = {};
+                convs.forEach(conv => {
+                    const lastMsg = conv.last_message;
+                    // If last message exists, is NOT from current user, and is NOT read
+                    if (lastMsg && lastMsg.sender !== currentUser.id && !lastMsg.is_read) {
+                        unreads[conv.id] = true;
+                    }
+                });
+                setUnreadCounts(unreads);
+            } catch (err) {
+                console.error('Failed to fetch conversations:', err);
+                if (err.response?.status === 401) {
+                    localStorage.removeItem('access');
+                    localStorage.removeItem('refresh');
+                    localStorage.removeItem('user');
+                    navigate('/login');
+                } else {
+                    setFetchError('Could not load conversations.');
+                }
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchConversations();
+    }, [navigate]);
+
+    // Fetch messages & connect WS when activeChatId changes
+    useEffect(() => {
+        if (!activeChatId) return;
+
+        const token = localStorage.getItem('access');
+        const fetchMessages = async () => {
+            try {
+                const response = await axios.get(`/api/conversations/${activeChatId}/`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setChatMessages(response.data.messages || []);
+                setTimeout(() => messagesEndRef.current?.scrollIntoView(), 100);
+                
+                // Mark as read
+                setUnreadCounts(prev => ({ ...prev, [activeChatId]: false }));
+            } catch (err) {
+                console.error("Failed to fetch active chat messages", err);
+            }
+        };
+        fetchMessages();
+
+        const ws = new WebSocket(`ws://localhost:8000/ws/chat/${activeChatId}/`);
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'receive_message') {
+                setChatMessages(prev => [...prev, {
+                    sender: { username: data.senderId },
+                    text: data.text,
+                    timestamp: new Date().toISOString()
+                }]);
+                setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }
+        };
+        setSocket(ws);
+        
+        return () => ws.close();
+    }, [activeChatId]);
+
+    const handleSelectChat = async (id) => {
+        setActiveChatId(id);
+        const token = localStorage.getItem('access');
+        try {
+            await axios.post(`/api/conversations/${id}/mark-read/`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            // Update local state instantly
+            setUnreadCounts(prev => ({ ...prev, [id]: false }));
+            setConversations(prev => prev.map(conv => 
+                conv.id === id ? { ...conv, last_message: { ...conv.last_message, is_read: true } } : conv
+            ));
+        } catch (err) {
+            console.error('Failed to mark chat as read', err);
+        }
+    };
+
+    const handleSendMessage = async (e) => {
+        e.preventDefault();
+        if (!messageInput.trim() || !activeChatId) return;
+
+        const text = messageInput;
+        setMessageInput('');
+        const token = localStorage.getItem('access');
+
+        try {
+            const response = await axios.post('/api/messages/send/', {
+                conversation_id: activeChatId,
+                text: text
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            // If WS is open, broadcast to other user
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'send_message',
+                    senderId: currentUser.username,
+                    text: text
+                }));
+            } else {
+                setChatMessages(prev => [...prev, response.data]);
+                setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }
+        } catch (err) {
+            console.error('Failed to send message', err);
+            setMessageInput(text); // restore input if failed
+        }
+    };
+
+    const handleSearchChange = (e) => {
+        const q = e.target.value;
+        setSearchQuery(q);
+        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+        if (!q.trim()) {
+            setUserResults([]);
+            setShowDropdown(false);
+            return;
+        }
+        setSearching(true);
+        setShowDropdown(true);
+        searchTimeoutRef.current = setTimeout(async () => {
+            try {
+                const token = localStorage.getItem('access');
+                const res = await axios.get(`/api/search/users/?q=${encodeURIComponent(q)}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setUserResults(res.data);
+            } catch (err) {
+                console.error('Search error:', err);
+            } finally {
+                setSearching(false);
+            }
+        }, 350);
+    };
+
+    const startChat = async (username) => {
+        try {
+            const token = localStorage.getItem('access');
+            const res = await axios.post('/api/conversations/create/', { username }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const convoId = res.data.id;
+            setSearchQuery('');
+            setUserResults([]);
+            setShowDropdown(false);
+            
+            // Add to conversations list if new
+            setConversations(prev => {
+                if (!prev.find(c => c.id === convoId)) {
+                    return [res.data, ...prev];
+                }
+                return prev;
+            });
+            
+            setActiveChatId(convoId);
+        } catch (err) {
+            console.error('Failed to start chat:', err);
+        }
+    };
+
+    const toggleVisibility = async (e, convoId) => {
+        e.stopPropagation();
+        try {
+            const token = localStorage.getItem('access');
+            const res = await axios.post(`/api/conversations/${convoId}/toggle-visibility/`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setConversations(prev => prev.map(c => 
+                c.id === convoId ? { ...c, is_public: res.data.is_public } : c
+            ));
+        } catch (err) {
+            console.error('Failed to toggle visibility:', err);
+        }
+    };
+
+    const filtered = searchQuery
+        ? conversations.filter(c => {
+            const name = c.other_participant?.username || '';
+            return name.toLowerCase().includes(searchQuery.toLowerCase());
+          })
+        : conversations;
+
+    const formatTime = (ts) => {
+        if (!ts) return '';
+        const d = new Date(ts);
+        const now = new Date();
+        const diff = now - d;
+        if (diff < 86400000) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    };
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-color)' }}>
+            <Header />
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+                {/* Sidebar */}
+                <div style={{
+                    width: '320px',
+                    minWidth: '320px',
+                    borderRight: '3px solid var(--border-color)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: '#fff',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{ padding: '1.25rem 1rem', borderBottom: '3px solid var(--border-color)', background: '#000', color: '#fff' }}>
+                        <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 700, letterSpacing: '2px', marginBottom: '0.75rem' }}>MESSAGES</h2>
+                        <div style={{ position: 'relative' }}>
+                            <input
+                                type="text"
+                                placeholder="Search users..."
+                                value={searchQuery}
+                                onChange={handleSearchChange}
+                                onFocus={() => searchQuery && setShowDropdown(true)}
+                                onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                                style={{ width: '100%', padding: '0.5rem 0.75rem', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', background: '#1a1a1a', color: '#fff', border: '2px solid #333', outline: 'none' }}
+                            />
+                            {showDropdown && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '2px solid #000', zIndex: 100, maxHeight: '240px', overflowY: 'auto', boxShadow: '4px 4px 0 #000' }}>
+                                    {searching ? (
+                                        <div style={{ padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>Searching...</div>
+                                    ) : (
+                                        userResults.map(u => (
+                                            <div key={u.id} onMouseDown={() => startChat(u.username)} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.6rem 0.85rem', cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}>
+                                                <div style={{ width: '30px', height: '30px', border: '2px solid #000', overflow: 'hidden' }}>
+                                                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} alt={u.username} style={{ width: '100%', height: '100%' }} />
+                                                </div>
+                                                <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700 }}>{u.username}</p>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                        {loading ? (
+                            <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>LOADING...</div>
+                        ) : (
+                            filtered.map((convo) => {
+                                const other = convo.other_participant;
+                                const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${other?.username || 'anon'}`;
+                                const isUnread = unreadCounts[convo.id];
+
+                                return (
+                                    <div 
+                                        key={convo.id} 
+                                        onClick={() => handleSelectChat(convo.id)} 
+                                        style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '0.75rem', 
+                                            padding: '0.875rem 1rem', 
+                                            borderBottom: '2px solid #f0f0f0', 
+                                            cursor: 'pointer', 
+                                            background: activeChatId === convo.id ? '#f5f5f5' : 'transparent',
+                                            position: 'relative',
+                                            borderLeft: isUnread ? '6px solid var(--accent-color)' : 'none'
+                                        }}
+                                    >
+                                        <div style={{ position: 'relative', width: '44px', height: '44px', border: '2px solid #000', overflow: 'hidden' }}>
+                                            <img src={avatarUrl} alt={other?.username} style={{ width: '100%', height: '100%' }} />
+                                            {isUnread && (
+                                                <div style={{ position: 'absolute', top: -1, right: -1, width: 12, height: 12, background: 'var(--accent-color)', border: '2px solid #000', borderRadius: '50%' }} />
+                                            )}
+                                        </div>
+                                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 700 }}>{other?.username || 'Unknown'}</span>
+                                                    {isUnread && (
+                                                        <span style={{ fontSize: '0.55rem', fontWeight: 900, background: 'var(--accent-color)', padding: '1px 4px', border: '1.5px solid #000', fontFamily: 'var(--font-mono)' }}>NEW</span>
+                                                    )}
+                                                </div>
+                                                <span 
+                                                    onClick={(e) => { e.stopPropagation(); toggleVisibility(e, convo.id); }}
+                                                    style={{ cursor: 'pointer', color: convo.is_public ? 'var(--accent-color)' : '#bbb' }}
+                                                >
+                                                    {convo.is_public ? <Eye size={14} /> : <EyeOff size={14} />}
+                                                </span>
+                                            </div>
+                                            <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: isUnread ? '#000' : '#555', fontWeight: isUnread ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {convo.last_message?.text || 'No messages yet'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    <div style={{ borderTop: '3px solid var(--border-color)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div style={{ width: '36px', height: '36px', border: '2px solid #000', overflow: 'hidden' }}>
+                            <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.username || 'anon'}`} alt="me" style={{ width: '100%', height: '100%' }} />
+                        </div>
+                        <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', fontWeight: 700, flex: 1 }}>{currentUser?.username || 'GUEST'}</p>
+                        <button 
+                            onClick={handleLogout} 
+                            title="LOGOUT"
+                            style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                cursor: 'pointer', 
+                                color: '#FF4B5C',
+                                display: 'flex',
+                                alignItems: 'center',
+                                transition: 'transform 0.1s' 
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                            <LogOut size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Main Chat Area */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
+                    {!activeChatId ? (
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', opacity: 0.5 }}>
+                            <MessageCircle size={48} style={{ marginBottom: '1rem' }} />
+                            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>SELECT A TRANSMISSION TO BEGIN</p>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                                {/* Messages */}
+                                <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    {chatMessages.map((msg, idx) => {
+                                        const isMe = (msg.sender?.username || msg.sender_username) === currentUser.username;
+                                        return (
+                                            <div key={idx} style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
+                                                <div style={{ background: isMe ? 'var(--accent-color)' : '#fff', color: isMe ? '#fff' : '#000', border: '2px solid #000', padding: '0.75rem 1rem', boxShadow: isMe ? '-2px 2px 0 #000' : '2px 2px 0 #000' }}>
+                                                    {msg.message_type === 'image' ? <img src={msg.attachment} style={{ maxWidth: '100%', borderRadius: '4px' }} alt="sent" /> : msg.message_type === 'audio' ? <audio controls src={msg.attachment} style={{ width: '100%' }} /> : msg.text}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    <div ref={messagesEndRef} />
+                                </div>
+
+                                {/* Input */}
+                                <div style={{ padding: '0.75rem', borderTop: '3px solid #000', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                    <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={uploadFile} accept="image/*,audio/*" />
+                                    <button onClick={() => fileInputRef.current.click()} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Plus size={20} /></button>
+                                    <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Laugh size={20} color={showEmojiPicker ? 'var(--accent-color)' : '#666'} /></button>
+                                    <input 
+                                        type="text" 
+                                        value={messageInput} 
+                                        onChange={(e) => setMessageInput(e.target.value)} 
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSendMessage(e)} 
+                                        placeholder="Type your message..." 
+                                        style={{ flex: 1, padding: '0.6rem 0.75rem', border: '2px solid #000', fontFamily: 'var(--font-mono)' }} 
+                                    />
+                                    <button onClick={handleSendMessage} style={{ padding: '0.6rem 1rem', background: '#000', color: '#fff', border: '2px solid #000', cursor: 'pointer' }}><Send size={18} /></button>
+                                </div>
+                            </div>
+
+                            <AnimatePresence>
+                                {showEmojiPicker && (
+                                    <motion.div 
+                                        initial={{ x: '100%' }} 
+                                        animate={{ x: 0 }} 
+                                        exit={{ x: '100%' }} 
+                                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                        style={{ width: '320px', height: '100%', background: '#fff', borderLeft: '4px solid #000', display: 'flex', flexDirection: 'column', zIndex: 20 }}
+                                    >
+                                        <div style={{ padding: '1rem', borderBottom: '3px solid #000', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#000', color: '#fff' }}>
+                                            <h3 style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', fontWeight: 900, letterSpacing: '1px' }}>EMOJIS</h3>
+                                            <button onClick={() => setShowEmojiPicker(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff' }}><X size={18} /></button>
+                                        </div>
+                                        
+                                        {/* Emoji Search Input */}
+                                        <div style={{ padding: '12px', borderBottom: '3px solid #000', background: '#f5f5f5' }}>
+                                            <input 
+                                                type="text" 
+                                                placeholder="SEARCH EMOJIS..."
+                                                value={emojiSearchQuery}
+                                                onChange={(e) => setEmojiSearchQuery(e.target.value.toLowerCase())}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '10px 12px',
+                                                    border: '3px solid #000',
+                                                    fontFamily: 'var(--font-mono)',
+                                                    fontSize: '0.75rem',
+                                                    background: '#fff',
+                                                    outline: 'none',
+                                                    boxShadow: '3px 3px 0 #000'
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                                                {EMOJI_DATA.filter(e => e.tags.includes(emojiSearchQuery) || e.char.includes(emojiSearchQuery)).map((e, idx) => (
+                                                    <button 
+                                                        key={idx} 
+                                                        onClick={() => handleEmojiSelect(e.char)} 
+                                                        style={{ background: 'none', border: '1px solid #eee', fontSize: '22px', cursor: 'pointer', padding: '8px', borderRadius: '4px' }}
+                                                        onMouseEnter={e => e.currentTarget.style.borderColor = '#000'}
+                                                        onMouseLeave={e => e.currentTarget.style.borderColor = '#eee'}
+                                                    >
+                                                        {e.char}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {EMOJI_DATA.filter(e => e.tags.includes(emojiSearchQuery) || e.char.includes(emojiSearchQuery)).length === 0 && (
+                                                <div style={{ textAlign: 'center', padding: '2rem', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#888' }}>
+                                                    NO MATCHES FOUND
+                                                </div>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/chat/:id" element={<ChatPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/messages" element={<MessagesPage />} />
       </Routes>
     </Router>
   );

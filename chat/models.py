@@ -61,6 +61,11 @@ class Conversation(models.Model):
     participants = models.ManyToManyField(User, related_name='conversations')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    likes = models.IntegerField(default=0)
+    dislikes = models.IntegerField(default=0)
+    caps = models.IntegerField(default=0)
+    smiles = models.IntegerField(default=0)
+    views = models.IntegerField(default=0)
 
     class Meta:
         ordering = ['-updated_at']
@@ -88,12 +93,47 @@ class Conversation(models.Model):
         participants = self.participants.exclude(id=user.id)
         return participants.first() if participants.exists() else None
 
+    def increment_view(self):
+        """Increment view count"""
+        self.views += 1
+        self.save(update_fields=['views'])
+
+
+class ConversationReaction(models.Model):
+    """Track individual user reactions to conversations"""
+    REACTION_CHOICES = [
+        ('like', 'Like'),
+        ('dislike', 'Dislike'),
+        ('cap', 'Cap'),
+        ('smile', 'Smile'),
+    ]
+    
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='conversation_reactions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_reactions')
+    reaction_type = models.CharField(max_length=10, choices=REACTION_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('conversation', 'user', 'reaction_type')
+
+    def __str__(self):
+        return f"{self.user.username} {self.reaction_type}d conversation {self.conversation.id}"
+
 
 class Message(models.Model):
     """Individual message in a conversation"""
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
     text = models.TextField()
+    MESSAGE_TYPES = (
+        ('text', 'Text'),
+        ('image', 'Image'),
+        ('audio', 'Audio'),
+        ('file', 'File'),
+    )
+    message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text')
+    attachment = models.FileField(upload_to='chat_attachments/', null=True, blank=True)
+    is_read = models.BooleanField(default=False)
     timestamp = models.DateTimeField(auto_now_add=True)
     likes = models.IntegerField(default=0)
     dislikes = models.IntegerField(default=0)
@@ -181,11 +221,8 @@ class AnonymousProfile(models.Model):
 
     @staticmethod
     def generate_fake_username():
-        """Generate a random anonymous username"""
-        adjectives = ['Silent', 'Hidden', 'Mystery', 'Shadow', 'Ghost', 'Phantom', 'Secret', 'Unknown']
-        nouns = ['User', 'Viewer', 'Watcher', 'Observer', 'Lurker', 'Stranger']
-        number = ''.join(random.choices(string.digits, k=3))
-        return f"{random.choice(adjectives)}{random.choice(nouns)}{number}"
+        """Return a static anonymous username"""
+        return "Anonymous"
 
     @staticmethod
     def generate_fake_avatar_seed():
