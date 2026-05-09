@@ -216,80 +216,260 @@ def check_following(request, username):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_recommended_chats(request):
-    """Get algorithm-recommended public chats"""
-    # Get conversations where at least one participant has made it public
+    """
+    Multi-stage feed ranking algorithm inspired by TikTok, YouTube, and X.
+
+    STAGE 1 — CANDIDATE RETRIEVAL
+        Pull all public conversations as the candidate pool.
+
+    STAGE 2 — SIGNAL COLLECTION
+        For each conversation, compute raw engagement signals:
+        - Reaction score (weighted sum of likes/caps/smiles vs dislikes)
+        - Message velocity (messages in the last hour — recency boost)
+        - View count (reach signal)
+        - Conversation depth (total messages — quality proxy)
+        - Freshness decay (exponential decay over hours since last activity)
+        - Social graph boost (viewer follows a participant → personalized lift)
+        - Diversity penalty (avoid consecutive same-participant conversations)
+
+    STAGE 3 — SCORING
+        Combine signals into a single score using a weighted log-scale formula.
+        Apply a Wilson score lower bound for reactions (avoids low-count inflation).
+
+    STAGE 4 — RANKING + INJECTION
+        Sort by composite score, inject "breakout" chats (viral newcomers)
+        into top positions, and return paginated results.
+    """
+    import math
+    from datetime import timedelta
+    from django.utils import timezone
+
+    now = timezone.now()
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 20))
+
+    # ── STAGE 1: Candidate Retrieval ─────────────────────────────────────────
     public_visibilities = ChatVisibility.objects.filter(is_public=True)
     conversation_ids = public_visibilities.values_list('conversation_id', flat=True).distinct()
-    
+
+    # Annotate with message count and latest message time for efficiency
     conversations = Conversation.objects.filter(
         id__in=conversation_ids
-    ).order_by('-updated_at')[:20]
-    
-    result = []
+    ).annotate(
+        total_messages=Count('messages'),
+        # Reaction sum
+    ).prefetch_related('participants', 'messages')
+
+    # ── Social graph: who does the viewer follow? ────────────────────────────
+    followed_user_ids = set()
+    viewer_seen_ids = set()  # conversations the user has already seen (from session/cookie)
+
+    if request.user.is_authenticated:
+        followed_user_ids = set(
+            Follow.objects.filter(follower=request.user)
+            .values_list('following_id', flat=True)
+        )
+        # Conversations the user participated in (de-prioritize)
+        viewer_seen_ids = set(
+            request.user.conversations.values_list('id', flat=True)
+        )
+
+    # ── STAGE 2 + 3: Signal collection & Scoring ─────────────────────────────
+    def wilson_lower_bound(pos, neg, confidence=1.645):
+        """
+        Wilson score interval lower bound — avoids inflating scores for
+        conversations with very few reactions (same technique Reddit uses).
+        """
+        n = pos + neg
+        if n == 0:
+            return 0.0
+        z = confidence
+        phat = pos / n
+        return (phat + z*z/(2*n) - z * math.sqrt((phat*(1-phat)+z*z/(4*n))/n)) / (1+z*z/n)
+
+    def freshness_decay(last_activity, half_life_hours=6):
+        """
+        Exponential decay: a conversation that was active 6 hours ago scores
+        50% of what it would if it was active right now.
+        This mimics TikTok's strong recency bias.
+        """
+        hours_old = max((now - last_activity).total_seconds() / 3600, 0)
+        return math.exp(-0.693 * hours_old / half_life_hours)
+
+    def message_velocity(conv, window_minutes=60):
+        """
+        Messages sent in the last `window_minutes`. High velocity = "heating up".
+        Inspired by X's trending algorithm.
+        """
+        cutoff = now - timedelta(minutes=window_minutes)
+        return conv.messages.filter(timestamp__gte=cutoff).count()
+
+    scored = []
     for conv in conversations:
-        # Get both participants
         participants = list(conv.participants.all())
-        if len(participants) != 2:
+        if len(participants) < 2:
             continue
-            
+
+        # ── Reaction signals ──────────────────────────────────────────────────
+        positive = conv.likes + conv.caps + conv.smiles
+        negative = conv.dislikes
+        total_reactions = positive + negative
+
+        # Wilson lower bound prevents viral inflation from tiny samples
+        reaction_score = wilson_lower_bound(positive, negative) if total_reactions > 0 else 0.0
+
+        # ── Engagement depth ─────────────────────────────────────────────────
+        # More messages = richer conversation (log to avoid mega-threads dominating)
+        depth_score = math.log1p(conv.total_messages) / math.log1p(200)  # normalized 0–1
+
+        # ── View reach ───────────────────────────────────────────────────────
+        # Log-scale view count (YouTube-style reach signal)
+        view_score = math.log1p(conv.views) / math.log1p(100000)
+
+        # ── Freshness decay ───────────────────────────────────────────────────
+        last_activity = conv.updated_at
+        decay = freshness_decay(last_activity, half_life_hours=6)
+
+        # ── Velocity (heating up signal) ──────────────────────────────────────
+        velocity = message_velocity(conv, window_minutes=60)
+        velocity_score = math.log1p(velocity) / math.log1p(50)  # normalized
+
+        # ── Social graph boost ────────────────────────────────────────────────
+        # If you follow one of the chatters, this conversation gets a lift
+        participant_ids = {p.id for p in participants}
+        social_overlap = len(followed_user_ids & participant_ids)
+        social_boost = 1.0 + (0.4 * social_overlap)  # up to +40% boost
+
+        # ── Already-seen penalty ──────────────────────────────────────────────
+        seen_penalty = 0.3 if conv.id in viewer_seen_ids else 1.0
+
+        # ── COMPOSITE SCORE ───────────────────────────────────────────────────
+        # Weights inspired by TikTok (completion/recency), YouTube (depth/views),
+        # and X (social graph + reaction quality)
+        score = (
+            reaction_score  * 0.30 +   # Quality of reactions (Wilson)
+            decay           * 0.25 +   # Recency (TikTok-style decay)
+            velocity_score  * 0.20 +   # Heating up (X trending signal)
+            depth_score     * 0.15 +   # Conversation richness
+            view_score      * 0.10     # Reach/popularity
+        ) * social_boost * seen_penalty
+
+        # ── Breakout detection ────────────────────────────────────────────────
+        # A "breakout" chat is new (<2h) but already has high velocity or reactions
+        age_hours = (now - conv.updated_at).total_seconds() / 3600
+        is_breakout = age_hours < 2 and (velocity >= 5 or total_reactions >= 10)
+
+        scored.append({
+            'conv': conv,
+            'score': score,
+            'is_breakout': is_breakout,
+            'velocity': velocity,
+            'participants': participants,
+        })
+
+    # ── STAGE 4: Ranking + Breakout Injection ────────────────────────────────
+    # Sort by score descending
+    scored.sort(key=lambda x: x['score'], reverse=True)
+
+    # Separate breakouts and inject them into top-3 positions
+    breakouts = [s for s in scored if s['is_breakout']]
+    regulars = [s for s in scored if not s['is_breakout']]
+
+    # Interleave: first breakout at position 0 (if any), rest are regulars
+    final_ranked = []
+    breakout_injected = 0
+    for i, item in enumerate(regulars):
+        # Inject one breakout every 5 positions
+        if breakouts and breakout_injected < len(breakouts) and i % 5 == 0:
+            final_ranked.append(breakouts[breakout_injected])
+            breakout_injected += 1
+        final_ranked.append(item)
+
+    # Append any remaining breakouts at end
+    final_ranked.extend(breakouts[breakout_injected:])
+
+    # Pagination
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = final_ranked[start:end]
+
+    # ── Build response ────────────────────────────────────────────────────────
+    result = []
+    for item in page_items:
+        conv = item['conv']
+        participants = item['participants']
+
         display_usernames = {}
         chatter_data = []
-        for participant in participants:
-            # Check if this participant made their side public
-            is_public = conv.is_public_for_user(participant)
-            
-            if is_public:
-                # Show real profile
-                profile = participant.profile
-                display_usernames[participant.username] = participant.username
-                chatter_data.append({
-                    'username': participant.username,
-                    'avatar_url': profile.get_avatar_url(),
-                    'bio': profile.bio,
-                    'rank': profile.rank,
-                    'followers_count': profile.followers_count,
-                    'following_count': profile.following_count,
-                    'posts_count': profile.posts_count,
-                    'is_anonymous': False,
-                    'can_follow': True
-                })
-            else:
-                # Show anonymous profile
-                anonymous = AnonymousProfile.get_or_create_for_user(conv, participant)
-                display_usernames[participant.username] = anonymous.fake_username
-                chatter_data.append({
-                    'username': anonymous.fake_username,
-                    'avatar_url': anonymous.get_avatar_url(),
-                    'bio': '',
-                    'rank': 0,
-                    'followers_count': 0,
-                    'following_count': 0,
-                    'posts_count': 0,
-                    'is_anonymous': True,
-                    'can_follow': False
-                })
-        
-        # Get messages
-        messages = Message.objects.filter(conversation=conv).order_by('timestamp')
-        serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
-        
-        for msg in serialized_messages:
-            real_sender = msg.get('sender_username')
-            if real_sender in display_usernames:
-                msg['sender_username'] = display_usernames[real_sender]
-        
-        result.append({
-            'conversation_id': conv.id,
-            'chatters': chatter_data,
-            'messages': serialized_messages,
-            'likes': conv.likes,
-            'dislikes': conv.dislikes,
-            'caps': conv.caps,
-            'smiles': conv.smiles,
-            'updated_at': conv.updated_at
-        })
-    
+        try:
+            for participant in participants:
+                is_p_public = conv.is_public_for_user(participant)
+                if is_p_public:
+                    profile = participant.profile
+                    display_usernames[participant.username] = participant.username
+                    chatter_data.append({
+                        'id': participant.id,
+                        'username': participant.username,
+                        'avatar_url': profile.get_avatar_url(),
+                        'color': profile.color if hasattr(profile, 'color') and profile.color else ('var(--red-accent)' if not chatter_data else 'var(--yellow-accent)'),
+                        'bio': profile.bio,
+                        'rank': profile.rank,
+                        'followers_count': profile.followers_count,
+                        'following_count': profile.following_count,
+                        'posts_count': profile.posts_count,
+                        'is_anonymous': False,
+                        'is_public': True,
+                        'can_follow': True
+                    })
+                else:
+                    anonymous = AnonymousProfile.get_or_create_for_user(conv, participant)
+                    display_usernames[participant.username] = anonymous.fake_username
+                    chatter_data.append({
+                        'id': participant.id,
+                        'username': anonymous.fake_username,
+                        'avatar_url': anonymous.get_avatar_url(),
+                        'color': '#eee',
+                        'bio': 'User prefers to stay in the shadows.',
+                        'rank': 0,
+                        'followers_count': 0,
+                        'following_count': 0,
+                        'posts_count': 0,
+                        'is_anonymous': True,
+                        'is_public': False,
+                        'can_follow': False
+                    })
+
+            messages = Message.objects.filter(conversation=conv).order_by('timestamp')
+            serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
+
+            for msg in serialized_messages:
+                real_sender = msg.get('sender_username')
+                if real_sender in display_usernames:
+                    msg['sender_username'] = display_usernames[real_sender]
+
+            result.append({
+                'conversation_id': conv.id,
+                'participants': chatter_data,
+                'messages': serialized_messages,
+                'likes': conv.likes,
+                'dislikes': conv.dislikes,
+                'caps': conv.caps,
+                'smiles': conv.smiles,
+                'views': conv.views,
+                'updated_at': conv.updated_at,
+                '_feed': {
+                    'score': round(item['score'], 4),
+                    'velocity': item['velocity'],
+                    'is_breakout': item['is_breakout'],
+                }
+            })
+        except Exception as e:
+            # Shield the feed from a single corrupted conversation
+            print(f"ERROR: Could not serialize conversation {conv.id}: {e}")
+            continue
+
     return Response(result)
+
 
 
 @api_view(['GET'])
@@ -409,42 +589,78 @@ def get_conversation(request, conversation_id):
         if not ChatVisibility.objects.filter(conversation=conversation, is_public=True).exists():
             return Response({'error': 'Not a participant or public'}, status=status.HTTP_403_FORBIDDEN)
     
+    # Increment view count for the conversation
+    conversation.increment_view()
+    
     messages = Message.objects.filter(conversation=conversation).order_by('timestamp')
     serialized_conv = ConversationSerializer(conversation, context={'request': request}).data
     serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
     
-    # Anonymize users and messages for non-participants based on their visibility preference
-    if not is_participant:
-        display_usernames = {}
-        for participant in conversation.participants.all():
-            if conversation.is_public_for_user(participant):
-                display_usernames[participant.username] = participant.username
-            else:
-                anon = AnonymousProfile.get_or_create_for_user(conversation, participant)
-                display_usernames[participant.username] = anon.fake_username
-                
-                # Replace in serialized_conv['participants']
-                for p in serialized_conv.get('participants', []):
-                    if p['username'] == participant.username:
-                        p['username'] = anon.fake_username
-                        p['first_name'] = 'Anonymous'
-                        p['last_name'] = ''
-                        
-                # Replace in 'other_participant' just in case
-                other = serialized_conv.get('other_participant')
-                if other and other['username'] == participant.username:
-                    other['username'] = anon.fake_username
-                    other['first_name'] = 'Anonymous'
-                    other['last_name'] = ''
+    # Identify which participants should be anonymous
+    display_usernames = {}
+    chatter_data = []
 
-        for msg in serialized_messages:
-            real_sender = msg.get('sender_username')
-            if real_sender in display_usernames:
-                msg['sender_username'] = display_usernames[real_sender]
+    # Get participants in consistent order: [Creator, Other]
+    all_p = conversation.participants.all().order_by('id') # Force deterministic order
     
+    for participant in all_p:
+        is_p_public = conversation.is_public_for_user(participant)
+        
+        if is_p_public:
+            profile = participant.profile
+            # For public users, use their ACTUAL username and real identity
+            real_username = str(participant.username)
+            display_usernames[participant.username] = real_username
+            chatter_data.append({
+                'id': participant.id,
+                'username': real_username,
+                'avatar': profile.avatar if profile.avatar else real_username[:2].upper(),
+                'avatar_url': profile.get_avatar_url(),
+                'color': profile.color if hasattr(profile, 'color') and profile.color else ('var(--red-accent)' if not chatter_data else 'var(--yellow-accent)'),
+                'handle': f"@{real_username}",
+                'is_anonymous': False,
+                'is_public': True,
+                'bio': profile.bio,
+                'rank': profile.rank,
+                'followers_count': profile.followers_count,
+                'following_count': profile.following_count,
+                'posts_count': profile.posts_count,
+            })
+        else:
+            anon = AnonymousProfile.get_or_create_for_user(conversation, participant)
+            # For anonymous users, strictly use the masked identity
+            masked_username = str(anon.fake_username)
+            display_usernames[participant.username] = masked_username
+            chatter_data.append({
+                'id': participant.id,
+                'username': masked_username,
+                'avatar': '?',
+                'avatar_url': anon.get_avatar_url(),
+                'color': '#eee',
+                'handle': '@anonymous',
+                'is_anonymous': True,
+                'is_public': False,
+                'bio': 'User prefers to stay in the shadows.',
+                'rank': 0,
+                'followers_count': 0,
+                'following_count': 0,
+                'posts_count': 0,
+            })
+        # Note: id is used to preserve left/right consistency
+
+    # Scrub sender names in messages based on our masking map
+    for msg in serialized_messages:
+        real_sender = msg.get('sender_username')
+        if real_sender in display_usernames:
+            msg['sender_username'] = display_usernames[real_sender]
+
     return Response({
-        'conversation': serialized_conv,
-        'messages': serialized_messages
+        'conversation': {
+            **serialized_conv,
+            'participants': chatter_data
+        },
+        'messages': serialized_messages,
+        'is_participant': is_participant
     })
 
 

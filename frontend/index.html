@@ -8,7 +8,18 @@
     <meta name="description" content="A futuristic, dark-themed chat viewing platform with unique visibility controls." />
   </head>
   <body>
+    <style>
+      veepn-lock-screen, veepn-intro-offer, veepn-panel { display:none!important; visibility:hidden!important; width:0!important; height:0!important; position:absolute!important; pointer-events:none!important; }
+    </style>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Remove VeePN extension overlays
+      function removeVeepn() {
+        document.querySelectorAll('veepn-lock-screen, veepn-intro-offer, veepn-panel').forEach(el => el.remove());
+      }
+      removeVeepn();
+      new MutationObserver(removeVeepn).observe(document.body, { childList: true, subtree: true });
+    </script>
   </body>
 </html>

@@ -98,7 +98,6 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class ConversationSerializer(serializers.ModelSerializer):
     """Serializer for Conversation model"""
-    participants = UserSerializer(many=True, read_only=True)
     last_message = MessageSerializer(source='get_last_message', read_only=True)
     is_public = serializers.SerializerMethodField()
     other_participant = serializers.SerializerMethodField()
@@ -107,7 +106,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
         fields = [
-            'id', 'participants', 'last_message', 'is_public', 
+            'id', 'last_message', 'is_public', 
             'other_participant', 'likes', 'dislikes', 'caps', 
             'smiles', 'views', 'user_reactions', 'created_at', 'updated_at'
         ]

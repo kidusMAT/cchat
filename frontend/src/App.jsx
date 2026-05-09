@@ -162,6 +162,15 @@ const EMOJI_DATA = [
   { char: '🏕️', tags: 'camp' }, { char: '🏖️', tags: 'beach' }, { char: '🏜️', tags: 'desert' }, { char: '🏝️', tags: 'island' }, { char: '🏞️', tags: 'park' },
 ];
 
+const EMOJI_LIBRARY = {
+  "VIBE": ['✨', '🔥', '🌈', '🌪️', '🌊', '⚡', '🌌', '🌠', '🌑', '🌕'],
+  "SYMBOLS": ['💎', '💍', '👑', '🎩', '🎯', '🎰', '🎲', '🎳', '🎨'],
+  "FACES": ['👺', '👽', '💀', '🤡', '🤖', '👹', '👻', '🕵️', '🧛', '🧟'],
+  "NATURE": ['🍄', '🐚', '🦪', '🐙', '🦖', '🐉', '🦄', '🌵', '🌴', '🌻'],
+  "HEARTS": ['🖤', '💔', '❣️', '💕', '💘', '💖', '💗', '💓', '💞', '💟']
+};
+
+
 const Header = () => {
     const navigate = useNavigate();
     const user = JSON.parse(localStorage.getItem('user'));
@@ -598,11 +607,9 @@ const ChatPage = () => {
   const [chatData, setChatData] = useState(null);
   const [socket, setSocket] = useState(null);
   const [floatingReactions, setFloatingReactions] = useState([]);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef(null);
-  const [emojiSearchQuery, setEmojiSearchQuery] = useState('');
   const messagesRef = useRef(null);
+  const [direction, setDirection] = useState(0);
+
 
   const spawnFloatingReaction = (type) => {
     const id = Date.now() + Math.random();
@@ -626,52 +633,6 @@ const ChatPage = () => {
     }, 4000);
   };
 
-  const handleEmojiSelect = (emoji) => {
-    setMessageInput(prev => prev + emoji);
-  };
-
-  const uploadFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('attachment', file);
-    formData.append('conversation', id);
-    formData.append('text', file.name); // Default text is filename
-
-    // Detect type
-    let type = 'file';
-    if (file.type.startsWith('image/')) type = 'image';
-    else if (file.type.startsWith('audio/')) type = 'audio';
-    formData.append('message_type', type);
-
-    try {
-      const token = localStorage.getItem('access');
-      const res = await axios.post('/api/messages/', formData, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      
-      // Send via socket to notify others
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          type: 'send_message',
-          text: file.name,
-          chatId: id,
-          message_type: type,
-          attachment: res.data.attachment
-        }));
-      }
-    } catch (err) {
-      console.error("Upload failed:", err);
-      alert("File upload failed.");
-    } finally {
-      setUploading(false);
-    }
-  };
   const isNavigatingRef = useRef(false);
 
   const currentIdIndexRaw = (() => {
@@ -916,7 +877,6 @@ const ChatPage = () => {
           }}
         >
           <div className="chat-page-layout" style={{ flex: 1, minHeight: 0 }}>
-          <div className="chat-content-container" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {/* Left sidebar */}
             <ProfileSidebar participant={p1} otherChats={chatData.otherChats.left} messageCount={p1MsgCount} />
 
@@ -998,7 +958,7 @@ const ChatPage = () => {
                     return (
                       <div className="chat-msg-container">
                         <div className="chat-msg-line">
-                          <span className="chat-msg-sender" style={{ color }}>{senderName} :</span>
+                          <span className="chat-msg-sender" style={{ color }}>{senderName.toUpperCase()}:</span>
                           {msg.message_type === 'image' ? (
                             <div className="chat-image-msg" style={{ marginTop: 8 }}>
                               <img 
@@ -1114,107 +1074,10 @@ const ChatPage = () => {
                 </div>
               </div>
 
-              {/* Input bar pinned at the absolute bottom of page */}
-              <div className="chat-input-bar">
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  style={{ display: 'none' }} 
-                  onChange={uploadFile}
-                  accept="image/*,audio/*"
-                />
-                
-                <button 
-                  className="input-action-btn" 
-                  onClick={() => fileInputRef.current.click()}
-                  disabled={uploading}
-                >
-                  <Plus size={20} />
-                </button>
-
-                <div style={{ position: 'relative' }}>
-                  <button 
-                    className={`input-action-btn ${showEmojiPicker ? 'active' : ''}`}
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    style={{ background: showEmojiPicker ? 'var(--accent-color)' : 'none' }}
-                  >
-                    <Laugh size={20} color={showEmojiPicker ? '#fff' : '#000'} />
-                  </button>
-                </div>
-
-                <input 
-                  type="text" 
-                  placeholder={uploading ? "UPLOADING FILE..." : "TYPE A MESSAGE..."}
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                  disabled={uploading}
-                />
-                <button className="send-btn" onClick={sendMessage} disabled={uploading}>
-                  <Send size={20} />
-                </button>
-              </div>
             </div>
 
-            {/* Emoji Sidebar — Slides in from right */}
-            <AnimatePresence>
-              {showEmojiPicker && (
-                <motion.div 
-                  initial={{ x: '100%' }}
-                  animate={{ x: 0 }}
-                  exit={{ x: '100%' }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className="emoji-sidebar"
-                  style={{
-                    width: '280px',
-                    height: '100%',
-                    background: '#fff',
-                    borderLeft: '4px solid #000',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    zIndex: 20
-                  }}
-                >
-                  <div className="emoji-sidebar-header" style={{ padding: '16px', borderBottom: '3px solid #000', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', fontWeight: 900 }}>EMOJIS<span>.</span></h3>
-                    <button onClick={() => setShowEmojiPicker(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
-                  </div>
-                  <div className="emoji-sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-                    {Object.entries(EMOJI_LIBRARY).map(([category, emojis]) => (
-                      <div key={category} style={{ marginBottom: '20px' }}>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: '#888', marginBottom: '8px', letterSpacing: '2px' }}>{category}</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
-                          {emojis.map(e => (
-                            <button 
-                              key={e} 
-                              onClick={() => handleEmojiSelect(e)}
-                              className="emoji-btn-item"
-                              style={{ 
-                                background: 'none', 
-                                border: '2px solid #eee', 
-                                fontSize: '20px', 
-                                cursor: 'pointer',
-                                padding: '8px',
-                                borderRadius: '4px',
-                                transition: 'all 0.1s' 
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.borderColor = '#000'}
-                              onMouseLeave={e => e.currentTarget.style.borderColor = '#eee'}
-                            >
-                              {e}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {/* Right sidebar */}
-            {!showEmojiPicker && <ProfileSidebar participant={p2} otherChats={chatData.otherChats.right} messageCount={p2MsgCount} />}
-          </div>
+            <ProfileSidebar participant={p2} otherChats={chatData.otherChats.right} messageCount={p2MsgCount} />
           </div>
         </motion.div>
       </AnimatePresence>
