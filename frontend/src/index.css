@@ -737,7 +737,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: var(--bg-color);
+    background: #FAFAFA;
 }
 
 .chat-views-info {
