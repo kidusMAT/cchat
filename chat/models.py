@@ -114,7 +114,7 @@ class ConversationReaction(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('conversation', 'user', 'reaction_type')
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.user.username} {self.reaction_type}d conversation {self.conversation.id}"
@@ -130,6 +130,7 @@ class Message(models.Model):
         ('image', 'Image'),
         ('audio', 'Audio'),
         ('file', 'File'),
+        ('poll', 'Poll'),
     )
     message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text')
     attachment = models.FileField(upload_to='chat_attachments/', null=True, blank=True)
@@ -138,7 +139,10 @@ class Message(models.Model):
     likes = models.IntegerField(default=0)
     dislikes = models.IntegerField(default=0)
     caps = models.IntegerField(default=0)
+    smiles = models.IntegerField(default=0)
     views = models.IntegerField(default=0)
+    is_edited = models.BooleanField(default=False)
+
 
     class Meta:
         ordering = ['-timestamp']
@@ -152,7 +156,8 @@ class Message(models.Model):
         reactions = {
             'like': self.likes,
             'dislike': self.dislikes,
-            'cap': self.caps
+            'cap': self.caps,
+            'smile': self.smiles
         }
         if all(v == 0 for v in reactions.values()):
             return 'neutral'
@@ -170,6 +175,7 @@ class MessageReaction(models.Model):
         ('like', 'Like'),
         ('dislike', 'Dislike'),
         ('cap', 'Cap'),
+        ('smile', 'Smile'),
     ]
     
     message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reactions')
@@ -183,6 +189,22 @@ class MessageReaction(models.Model):
     def __str__(self):
         return f"{self.user.username} {self.reaction_type}d message {self.message.id}"
 
+
+class MessageComment(models.Model):
+    """Inline comments on individual messages from public readers and chatters"""
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='comments')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='message_comments')
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='replies')
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_edited = models.BooleanField(default=False)
+
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Comment by {self.user.username} on message {self.message.id}"
 
 class ChatVisibility(models.Model):
     """Controls whether a user's side of a conversation is public"""
@@ -258,3 +280,49 @@ class Post(models.Model):
 
     def __str__(self):
         return f"{self.user.username}: {self.title}"
+
+
+class MessagePoll(models.Model):
+    """Data for a poll embedded in a message"""
+    message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name='poll_data')
+    question = models.CharField(max_length=255)
+    option_a = models.CharField(max_length=100)
+    option_b = models.CharField(max_length=100)
+    votes_a = models.IntegerField(default=0)
+    votes_b = models.IntegerField(default=0)
+    is_system_generated = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Poll: {self.question}"
+
+
+class PollVote(models.Model):
+    """Track which option a user voted for in a poll"""
+    poll = models.ForeignKey(MessagePoll, on_delete=models.CASCADE, related_name='votes')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='poll_votes')
+    # 'A' or 'B'
+    selected_option = models.CharField(max_length=1)
+
+    class Meta:
+        unique_together = ('poll', 'user')
+
+    def __str__(self):
+        return f"{self.user.username} voted {self.selected_option} on poll {self.poll.id}"
+
+
+class SponsorshipRequest(models.Model):
+    """Ad sponsorship request for a conversation"""
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='sponsorships')
+    sponsor_name = models.CharField(max_length=100)
+    sponsor_text = models.CharField(max_length=200)
+    user1 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sponsorship_requests_as_user1', null=True)
+    user2 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sponsorship_requests_as_user2', null=True)
+    user1_accepted = models.BooleanField(default=False)
+    user2_accepted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Sponsorship from {self.sponsor_name} for chat {self.conversation.id}"

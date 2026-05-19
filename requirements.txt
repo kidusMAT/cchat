@@ -1,0 +1,24 @@
+asgiref==3.11.0
+Django==5.2.10
+django-cors-headers==4.9.0
+djangorestframework==3.16.1
+djangorestframework_simplejwt==5.5.1
+pillow==12.1.0
+PyJWT==2.11.0
+sqlparse==0.5.5
+tzdata==2025.3
+
+# Django Channels & Servers
+channels>=4.0.0
+daphne>=4.1.0
+channels-redis>=4.0.0
+uvicorn[standard]>=0.22.0
+gunicorn>=21.0.0
+
+# Production Database adapters (Neon PostgreSQL support)
+psycopg2-binary>=2.9.0
+dj-database-url>=2.0.0
+
+# Google Authentication & OAuth support
+google-auth>=2.20.0
+requests>=2.30.0

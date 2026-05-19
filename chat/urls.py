@@ -8,6 +8,7 @@ urlpatterns = [
     path('auth/login/', views.login_user, name='login'),
     path('auth/google/', views.google_login, name='google_login'),
     path('auth/logout/', views.logout_user, name='logout'),
+    path('auth/change-password/', views.change_password, name='change_password'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
     # Profile
@@ -35,8 +36,11 @@ urlpatterns = [
     # Messages
     path('messages/send/', views.send_message, name='send_message'),
     path('messages/<int:message_id>/react/', views.react_to_message, name='react_to_message'),
+    path('messages/<int:message_id>/comment/', views.add_message_comment, name='add_message_comment'),
     path('messages/<int:message_id>/remove-reaction/', views.remove_reaction, name='remove_reaction'),
     path('messages/<int:message_id>/view/', views.increment_view, name='increment_view'),
+    path('messages/<int:message_id>/delete/', views.delete_message, name='delete_message'),
+    path('comments/<int:comment_id>/delete/', views.delete_comment, name='delete_comment'),
     path('conversations/<int:conversation_id>/mark-read/', views.mark_messages_read, name='mark_messages_read'),
     
     # Posts

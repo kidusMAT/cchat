@@ -270,8 +270,8 @@ body {
 }
 
 .thread-header {
-    background: #000000;
-    color: #ffffff;
+    background: var(--inverse-bg);
+    color: var(--inverse-text);
     padding: 0.4rem 0.7rem;
     display: flex;
     justify-content: space-between;
@@ -334,7 +334,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #FAFAFA;
+    background: var(--bg-color);
 }
 
 .reactions {
@@ -350,20 +350,21 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: #ffffff;
+    background: var(--card-bg);
+    color: var(--text-primary);
     font-family: var(--font-mono);
 }
 
 .reaction-pill.active {
     background: var(--accent-color);
-    color: #ffffff;
+    color: var(--inverse-text);
 }
 
 .thread-meta {
     font-size: 0.85rem;
     font-family: var(--font-body);
     font-weight: 500;
-    color: #4B5563;
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -378,20 +379,20 @@ body {
     justify-content: center;
     width: 32px;
     height: 32px;
-    background: #fff;
-    border: 2px solid #000;
-    box-shadow: 4px 4px 0px #000;
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    box-shadow: 4px 4px 0px var(--shadow-color);
     transition: all 0.1s ease;
 }
 
 .back-arrow:hover {
     transform: translate(-2px, -2px);
-    box-shadow: 6px 6px 0px #000;
+    box-shadow: 6px 6px 0px var(--shadow-color);
 }
 
 .back-arrow:active {
     transform: translate(2px, 2px);
-    box-shadow: 2px 2px 0px #000;
+    box-shadow: 2px 2px 0px var(--shadow-color);
 }
 
 .chat-header-bar {
@@ -427,7 +428,7 @@ body {
 .profile-card {
     border: var(--border-width) solid var(--border-color);
     background: var(--card-bg);
-    box-shadow: 0px 6px 0px 0px #000;
+    box-shadow: 0px 6px 0px 0px var(--shadow-color);
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
@@ -491,7 +492,7 @@ body {
 .other-chats-section {
     border: var(--border-width) solid var(--border-color);
     background: var(--card-bg);
-    box-shadow: 0px 6px 0px 0px #000;
+    box-shadow: 0px 6px 0px 0px var(--shadow-color);
     padding: 1rem;
 }
 
@@ -518,9 +519,9 @@ body {
 }
 
 .other-chat-item:hover {
-    background: #f3f4f6;
-    border: 2px solid #000;
-    box-shadow: 4px 4px 0px #000;
+    background: var(--bg-color);
+    border: 2px solid var(--border-color);
+    box-shadow: 4px 4px 0px var(--shadow-color);
     transform: translate(-2px, -2px);
 }
 
@@ -551,13 +552,13 @@ body {
     position: absolute;
     top: -2px;
     right: -2px;
-    background: #000;
-    color: #fff;
+    background: var(--inverse-bg);
+    color: var(--inverse-text);
     font-family: var(--font-mono);
     font-size: 0.5rem;
     padding: 0.15rem 0.5rem;
     font-weight: 700;
-    border: 2px solid #000;
+    border: 2px solid var(--border-color);
 }
 
 .ad-title {
@@ -593,7 +594,7 @@ body {
 .chat-center {
     border: var(--border-width) solid var(--border-color);
     background: var(--card-bg);
-    box-shadow: 4px 6px 0px 0px #000;
+    box-shadow: 4px 6px 0px 0px var(--shadow-color);
 }
 
 .chat-thread-header {
@@ -736,7 +737,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #FAFAFA;
+    background: var(--bg-color);
 }
 
 .chat-views-info {
@@ -979,4 +980,342 @@ body {
     margin-bottom: 2rem;
     box-shadow: 4px 4px 0px 0px #000;
     text-transform: uppercase;
+}
+
+/* ─── Poll Block ──────────────────────────────────────────────── */
+.poll-block {
+    width: 100%;
+    margin-top: 8px;
+    padding: 14px 16px;
+    background: var(--inverse-bg);
+    border: 3px solid var(--border-color);
+    box-shadow: 4px 4px 0 var(--shadow-color);
+    color: var(--inverse-text);
+    position: relative;
+}
+
+.poll-block::before {
+    content: '📊 POLL';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: var(--accent-color);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    padding: 2px 8px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    border: 2px solid var(--border-color);
+}
+
+.poll-question {
+    font-family: var(--font-mono);
+    font-weight: 900;
+    font-size: 0.82rem;
+    margin-bottom: 10px;
+    letter-spacing: -0.3px;
+}
+
+.poll-reader-hint {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--accent-color);
+    margin-bottom: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.poll-option {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    background: transparent;
+    border: 2px solid var(--border-color);
+    font-family: var(--font-mono);
+    font-weight: 800;
+    font-size: 0.72rem;
+    color: var(--inverse-text);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+    transition: all 0.12s ease;
+}
+
+.poll-option:not(:disabled) {
+    cursor: pointer;
+}
+
+.poll-option:not(:disabled):hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 var(--accent-color);
+}
+
+.poll-option:not(:disabled):active {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0 var(--accent-color);
+}
+
+.poll-option.selected {
+    background: var(--accent-color);
+    color: #fff;
+    border-color: var(--accent-color);
+    box-shadow: 2px 2px 0 var(--shadow-color);
+}
+
+.poll-option:disabled {
+    opacity: 0.7;
+    cursor: default;
+}
+
+.poll-bar-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    margin-bottom: 4px;
+    overflow: hidden;
+}
+
+.poll-bar-fill {
+    height: 100%;
+    background: var(--accent-color);
+    transition: width 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.poll-voters-container {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 10px;
+    padding-left: 2px;
+}
+
+.poll-voters-title {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 800;
+    color: var(--inverse-text);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    opacity: 0.85;
+}
+
+.poll-voter-badge {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    font-weight: 700;
+    background: var(--accent-color);
+    color: #fff;
+    border: 1px solid var(--border-color);
+    padding: 1px 5px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    box-shadow: 1px 1px 0 var(--border-color);
+}
+
+.poll-total {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    font-weight: 700;
+    opacity: 0.6;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+/* ─── Poll Creation Form ──────────────────────────────────────── */
+.poll-create-form {
+    padding: 12px;
+    border: 3px solid var(--border-color);
+    background: var(--card-bg);
+    box-shadow: 4px 4px 0 var(--shadow-color);
+    margin-bottom: 8px;
+    position: relative;
+}
+
+.poll-create-form::before {
+    content: 'CREATE POLL';
+    position: absolute;
+    top: -12px;
+    left: 12px;
+    background: var(--accent-color);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    padding: 2px 10px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    border: 2px solid var(--border-color);
+}
+
+.poll-create-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    outline: none;
+    margin-bottom: 8px;
+    transition: box-shadow 0.1s ease;
+}
+
+.poll-create-input:focus {
+    box-shadow: 3px 3px 0 var(--accent-color);
+    transform: translate(-1px, -1px);
+}
+
+.poll-create-input::placeholder {
+    opacity: 0.5;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.poll-create-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.poll-create-btn {
+    padding: 6px 16px;
+    border: 2px solid var(--border-color);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 900;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.1s ease;
+}
+
+.poll-create-btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 3px 3px 0 var(--shadow-color);
+}
+
+.poll-create-btn.primary {
+    background: var(--accent-color);
+    color: #fff;
+}
+
+.poll-create-btn.secondary {
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+/* ─── Sponsor Badge (Dynamic) ─────────────────────────────────── */
+.sponsor-badge-dynamic {
+    border: var(--border-width) solid var(--border-color);
+    background: var(--card-bg);
+    padding: 1rem;
+    position: relative;
+    text-align: left;
+    animation: sponsorFadeIn 0.4s ease-out;
+}
+
+@keyframes sponsorFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.sponsor-badge-dynamic .sponsor-tag {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: var(--accent-color);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    padding: 2px 8px;
+    font-weight: 900;
+    border: 2px solid var(--border-color);
+    letter-spacing: 1px;
+}
+
+.sponsor-badge-dynamic .sponsor-name {
+    font-family: var(--font-heading);
+    font-size: 0.82rem;
+    font-weight: 900;
+    margin-bottom: 4px;
+    color: var(--accent-color);
+    letter-spacing: -0.5px;
+}
+
+.sponsor-badge-dynamic .sponsor-text {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    font-weight: 500;
+    opacity: 0.8;
+}
+
+.sponsor-badge-dynamic .sponsor-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.sponsor-accept-btn,
+.sponsor-reject-btn {
+    flex: 1;
+    padding: 5px 10px;
+    border: 2px solid var(--border-color);
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    font-weight: 900;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.1s ease;
+}
+
+.sponsor-accept-btn {
+    background: #10B981;
+    color: #fff;
+}
+
+.sponsor-reject-btn {
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.sponsor-accept-btn:hover,
+.sponsor-reject-btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 2px 2px 0 var(--shadow-color);
+}
+
+.sponsor-status {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sponsor-status.accepted {
+    color: #10B981;
+}
+
+.sponsor-status.pending {
+    color: #F59E0B;
+}
+
+.sponsor-status.rejected {
+    color: #EF4444;
 }

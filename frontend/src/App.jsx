@@ -28,12 +28,17 @@ import {
   Target,
   Camera,
   Video,
-  LogOut
+  LogOut,
+  Settings,
+  Bell,
+  Wifi,
+  Clock
 } from 'lucide-react';
 import axios from 'axios';
 
 // Configure axios
-axios.defaults.baseURL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+axios.defaults.baseURL = API_URL;
 
 const EMOJI_DATA = [
   { char: '✨', tags: 'sparkles vibe shine magic' }, { char: '🔥', tags: 'fire hot flame vibe' }, { char: '🌈', tags: 'rainbow vibe color' }, { char: '🌪️', tags: 'tornado vibe storm' }, { char: '🌊', tags: 'wave vibe water' },
@@ -229,7 +234,7 @@ const getAvatarStyle = (username, index) => {
   };
 };
 
-const ThreadCard = ({ thread }) => {
+const ThreadCard = ({ thread, currentUser }) => {
   const participants = thread.chatters || [];
   const latestMessages = thread.messages ? thread.messages.slice(-6) : [];
 
@@ -264,13 +269,17 @@ const ThreadCard = ({ thread }) => {
         ))}
       </div>
       <div className="thread-preview">
-        {latestMessages.map((msg, i) => (
-          <div key={i} className="preview-line">
-            <span style={{ color: 'var(--accent-color)' }}>
-              {msg.sender_username?.toUpperCase() || msg.sender?.toUpperCase() || 'ANON'}:
-            </span> {msg.text}
-          </div>
-        ))}
+        {latestMessages.map((msg, i) => {
+          const sender = msg.sender_username || msg.sender;
+          const isMe = currentUser && sender && (sender.toUpperCase() === currentUser.username.toUpperCase() || sender.toUpperCase() === 'YOU');
+          return (
+            <div key={i} className="preview-line">
+              <span style={{ color: 'var(--accent-color)' }}>
+                {isMe ? 'YOU' : (msg.sender_username?.toUpperCase() || msg.sender?.toUpperCase() || 'ANON')}:
+              </span> {msg.text}
+            </div>
+          );
+        })}
       </div>
       <div className="thread-footer">
         <div className="reactions">
@@ -368,12 +377,21 @@ const mockThreads = [
 const LandingPage = () => {
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     const fetchThreads = async () => {
       try {
         const token = localStorage.getItem('access');
         const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        
+        try {
+            const userRes = await axios.get('/api/profile/', config);
+            setCurrentUser(userRes.data);
+        } catch (e) {
+            console.log("Not logged in on landing page");
+        }
+
         const response = await axios.get('/api/chats/recommended/', config);
         if (response.data && response.data.length > 0) {
           setThreads(response.data);
@@ -422,7 +440,7 @@ const LandingPage = () => {
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem', fontWeight: 900 }}>LOADING PULSES...</div>
           ) : (
             threads.map(thread => (
-              <ThreadCard key={thread.conversation_id} thread={thread} />
+              <ThreadCard key={thread.conversation_id} thread={thread} currentUser={currentUser} />
             ))
           )}
         </div>
@@ -434,8 +452,8 @@ const LandingPage = () => {
 const mockChatData = {
   1: {
     participants: [
-      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)' },
-      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000' }
+      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)', is_public: true },
+      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000', is_public: false }
     ],
     messages: [
       { sender: 'ALEX', text: 'should we switch to rust for the backend?' },
@@ -456,8 +474,8 @@ const mockChatData = {
   },
   4: {
     participants: [
-      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000' },
-      { username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6' }
+      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000', is_public: false },
+      { username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6', is_public: true }
     ],
     messages: [
       { sender: 'NEON', text: 'Casey, have you seen the new quantum encryption protocol?' },
@@ -475,8 +493,8 @@ const mockChatData = {
   },
   7: {
     participants: [
-      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)' },
-      { username: 'Taylor Kim', handle: '@taylorkim', avatar: 'TK', color: '#000' }
+      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)', is_public: true },
+      { username: 'Taylor Kim', handle: '@taylorkim', avatar: 'TK', color: '#000', is_public: true }
     ],
     messages: [
       { sender: 'ALEX', text: 'Taylor, are we still on for the code review at 3?' },
@@ -495,8 +513,8 @@ const mockChatData = {
   },
   12: {
     participants: [
-      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)' },
-      { username: 'Sam Rivera', handle: '@samrivera', avatar: 'SR', color: '#6B7280' }
+      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)', is_public: true },
+      { username: 'Sam Rivera', handle: '@samrivera', avatar: 'SR', color: '#6B7280', is_public: true }
     ],
     messages: [
       { sender: 'ALEX', text: 'hey Sam, did you check the new design for the delivery map?' },
@@ -515,8 +533,8 @@ const mockChatData = {
   },
   15: {
     participants: [
-      { username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6' },
-      { username: 'RogueOne', handle: '@rogueone', avatar: 'RO', color: 'var(--accent-color)' }
+      { username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6', is_public: true },
+      { username: 'RogueOne', handle: '@rogueone', avatar: 'RO', color: 'var(--accent-color)', is_public: true }
     ],
     messages: [
       { sender: 'ROGUE', text: 'is the staging server down?' },
@@ -533,8 +551,8 @@ const mockChatData = {
   },
   19: {
     participants: [
-      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000' },
-      { username: 'Jordan Blake', handle: '@jordanblake', avatar: 'JB', color: 'var(--accent-color)' }
+      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000', is_public: false },
+      { username: 'Jordan Blake', handle: '@jordanblake', avatar: 'JB', color: 'var(--accent-color)', is_public: true }
     ],
     messages: [
       { sender: 'NEON', text: 'Jordan, the AI models are evolving way too fast.' },
@@ -566,23 +584,36 @@ const NavigationArrows = ({ onNext, onPrev }) => (
   </div>
 );
 
-const ProfileSidebar = ({ participant, otherChats, messageCount }) => (
+const ProfileSidebar = ({ participant, otherChats = [], messageCount, currentUser }) => {
+  if (!participant) return null;
+  const isMe = currentUser && participant.username && (participant.username.toUpperCase() === currentUser.username.toUpperCase() || participant.username.toUpperCase() === 'YOU');
+  return (
   <div className="chat-sidebar">
     <div className="profile-card">
-      <div className="profile-avatar-large" style={{ background: participant.color }}>
+      <div className="profile-avatar-large" style={{ 
+        background: participant.is_public ? participant.color : '#F3F4F6',
+        color: participant.is_public ? '#fff' : '#9CA3AF',
+        border: participant.is_public ? 'none' : '2px dashed #D1D5DB'
+      }}>
         {participant.avatar}
       </div>
-      <div className="profile-name">{participant.username}</div>
+      <div className="profile-name">{isMe ? 'YOU' : participant.username}</div>
       <div className="profile-handle">{participant.handle}</div>
-      <div className="profile-badge">PUBLIC</div>
+      <div className="profile-badge" style={{ 
+        borderColor: participant.is_public ? 'var(--accent-color)' : '#9CA3AF',
+        color: participant.is_public ? 'var(--accent-color)' : '#9CA3AF',
+        transform: 'rotate(-2deg)'
+      }}>
+        {participant.is_public ? 'PUBLIC' : 'ANONYMOUS'}
+      </div>
       <div className="profile-stat">
         <span>MESSAGES</span>
-        <span>{messageCount}</span>
+        <span>{messageCount || 0}</span>
       </div>
     </div>
     <div className="other-chats-section">
-      <div className="other-chats-title">OTHER CHATS BY {participant.username.split(' ')[0].toUpperCase()}</div>
-      {otherChats.map((chat, i) => (
+      <div className="other-chats-title">OTHER CHATS BY {isMe ? 'YOU' : participant.username?.split(' ')[0].toUpperCase()}</div>
+      {(otherChats || []).map((chat, i) => (
         <Link key={i} to={`/chat/${chat.id}`} className="other-chat-item">
           <div className="other-chat-avatar" style={{ background: chat.color }}>{chat.avatar}</div>
           <div>
@@ -598,16 +629,30 @@ const ProfileSidebar = ({ participant, otherChats, messageCount }) => (
       <div className="ad-text">Fast. Secure. Brutalist. Get the new SSD now.</div>
     </div>
   </div>
-);
+  );
+};
 
 const ChatPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [chatData, setChatData] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [socket, setSocket] = useState(null);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const messagesRef = useRef(null);
+
+  const formatChatTime = (ts) => {
+      if (!ts || ts === 'just now') return ts;
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return ts;
+      const now = new Date();
+      const diff = now - d;
+      if (diff < 86400000) {
+          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
   const [direction, setDirection] = useState(0);
 
 
@@ -720,6 +765,18 @@ const ChatPage = () => {
       try {
         const token = localStorage.getItem('access');
         const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        
+        // Fetch current user profile first
+        try {
+            const userRes = await axios.get('/api/profile/', config);
+            setCurrentUser(userRes.data);
+        } catch (e) {
+            console.log("Not logged in");
+            if (e.response && e.response.status === 401) {
+                delete config.headers.Authorization;
+            }
+        }
+
         const response = await axios.get(`/api/conversations/${id}/`, config);
         
         if (response.data && response.data.conversation) {
@@ -733,7 +790,8 @@ const ChatPage = () => {
                         username: uname,
                         handle: `@${uname.toLowerCase().replace(/\s+/g, '')}`,
                         avatar: uname.slice(0, 2).toUpperCase(),
-                        color: i === 0 ? 'var(--accent-color)' : '#000'
+                        color: i === 0 ? 'var(--accent-color)' : '#000',
+                        is_public: p.is_public ?? true
                     };
                 }),
                 status: 'ACTIVE',
@@ -745,11 +803,14 @@ const ChatPage = () => {
                 views: conv.views || 0,
                 watching: 1,
                 user_reactions: conv.user_reactions || [],
-                otherChats: { left: [], right: [] }
+                otherChats: { 
+                    left: conv.other_chats_left || [], 
+                    right: conv.other_chats_right || [] 
+                }
             };
             
             if (newChatData.participants.length < 2) {
-                newChatData.participants.push({ username: 'ANON', handle: '@anon', avatar: 'AN', color: '#000' });
+                newChatData.participants.push({ username: 'ANON', handle: '@anon', avatar: 'AN', color: '#000', is_public: false });
             }
             
             setChatData(newChatData);
@@ -763,12 +824,36 @@ const ChatPage = () => {
             return;
         }
       } catch (error) {
-        console.log("Using mock data for chat", id);
+        console.error("Error fetching chat data:", error);
+        // Fallback to mock data if API fails
+        const mock = mockChatData[id];
+        if (mock) {
+            setChatData(mock);
+            if (mock.messages) {
+                setMessages(mock.messages.map(m => ({
+                    sender: m.sender || m.sender_username || 'ANON',
+                    text: m.text
+                })));
+            }
+        } else {
+            // Handle complete failure
+            setChatData({ 
+                participants: [
+                    { username: 'ERROR', handle: '@error', avatar: 'ER', color: '#f00', is_public: true }, 
+                    { username: 'ERROR', handle: '@error', avatar: 'ER', color: '#f00', is_public: true }
+                ],
+                status: 'OFFLINE',
+                created_at: 'now',
+                likes: 0, dislikes: 0, caps: 0, smiles: 0, views: 0, watching: 0,
+                otherChats: { left: [], right: [] }
+            });
+        }
       }
     };
     fetchMessages();
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/chat/${id}/`);
+    const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+    const ws = new WebSocket(`${wsBaseUrl}/ws/chat/${id}/`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'receive_message') {
@@ -878,7 +963,8 @@ const ChatPage = () => {
         >
           <div className="chat-page-layout" style={{ flex: 1, minHeight: 0 }}>
             {/* Left sidebar */}
-            <ProfileSidebar participant={p1} otherChats={chatData.otherChats.left} messageCount={p1MsgCount} />
+            <ProfileSidebar participant={p1} otherChats={chatData.otherChats.left} 
+              messageCount={p1MsgCount} currentUser={currentUser} />
 
             {/* Center chat column — fills remaining height */}
             <div className="chat-center" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
@@ -892,7 +978,7 @@ const ChatPage = () => {
                 </div>
                 <div className="chat-thread-meta">
                   <span className="chat-status-badge">{chatData.status}</span>
-                  <span className="chat-time">{chatData.created_at.toUpperCase()}</span>
+                  <span className="chat-time">{formatChatTime(chatData.created_at).toUpperCase()}</span>
                 </div>
               </div>
 
@@ -948,6 +1034,8 @@ const ChatPage = () => {
                   {(() => {
                     const senderName = msg.sender || msg.sender_username || 'ANON';
                     const senderUpper = senderName.toUpperCase();
+                    const isMe = currentUser && (senderUpper === currentUser.username.toUpperCase() || senderUpper === 'YOU');
+                    
                     const p1 = chatData.participants[0];
                     const isP1 = p1.username.toUpperCase().includes(senderUpper) || 
                                  senderUpper.includes(p1.username.toUpperCase()) || 
@@ -958,7 +1046,7 @@ const ChatPage = () => {
                     return (
                       <div className="chat-msg-container">
                         <div className="chat-msg-line">
-                          <span className="chat-msg-sender" style={{ color }}>{senderName.toUpperCase()}:</span>
+                          <span className="chat-msg-sender" style={{ color }}>{isMe ? 'YOU' : senderName.toUpperCase()}:</span>
                           {msg.message_type === 'image' ? (
                             <div className="chat-image-msg" style={{ marginTop: 8 }}>
                               <img 
@@ -1077,7 +1165,8 @@ const ChatPage = () => {
             </div>
 
             {/* Right sidebar */}
-            <ProfileSidebar participant={p2} otherChats={chatData.otherChats.right} messageCount={p2MsgCount} />
+            <ProfileSidebar participant={p2} otherChats={chatData.otherChats.right} 
+              messageCount={p2MsgCount} currentUser={currentUser} />
           </div>
         </motion.div>
       </AnimatePresence>
@@ -1300,6 +1389,13 @@ const MessagesPage = () => {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [emojiSearchQuery, setEmojiSearchQuery] = useState('');
+    const [onlineStatus, setOnlineStatus] = useState('ONLINE');
+    const [clock, setClock] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setClock(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     const commonEmojis = ['😂', '❤️', '🔥', '💀', '👍', '🙏', '💯', '✨', '🙌', '😮', '😢', '😍', '👏', '💔', '🤔'];
 
@@ -1312,7 +1408,6 @@ const MessagesPage = () => {
 
     const handleEmojiSelect = (emoji) => {
         setMessageInput(prev => prev + emoji);
-        setShowEmojiPicker(false);
     };
 
     const uploadFile = async (e) => {
@@ -1423,7 +1518,8 @@ const MessagesPage = () => {
         };
         fetchMessages();
 
-        const ws = new WebSocket(`ws://localhost:8000/ws/chat/${activeChatId}/`);
+        const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+        const ws = new WebSocket(`${wsBaseUrl}/ws/chat/${activeChatId}/`);
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'receive_message') {
@@ -1575,132 +1671,62 @@ const MessagesPage = () => {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-color)' }}>
             <Header />
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-
-                {/* Sidebar */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                {/* Floating Horizontal Chatter Bar */}
                 <div style={{
-                    width: '320px',
-                    minWidth: '320px',
-                    borderRight: '3px solid var(--border-color)',
                     display: 'flex',
-                    flexDirection: 'column',
-                    background: '#fff',
-                    overflow: 'hidden'
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0.75rem 1.25rem',
+                    background: 'transparent',
+                    overflowX: 'auto',
+                    gap: '0.5rem',
+                    flexShrink: 0
                 }}>
-                    <div style={{ padding: '1.25rem 1rem', borderBottom: '3px solid var(--border-color)', background: '#000', color: '#fff' }}>
-                        <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 700, letterSpacing: '2px', marginBottom: '0.75rem' }}>MESSAGES</h2>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type="text"
-                                placeholder="Search users..."
-                                value={searchQuery}
-                                onChange={handleSearchChange}
-                                onFocus={() => searchQuery && setShowDropdown(true)}
-                                onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-                                style={{ width: '100%', padding: '0.5rem 0.75rem', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', background: '#1a1a1a', color: '#fff', border: '2px solid #333', outline: 'none' }}
-                            />
-                            {showDropdown && (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '2px solid #000', zIndex: 100, maxHeight: '240px', overflowY: 'auto', boxShadow: '4px 4px 0 #000' }}>
-                                    {searching ? (
-                                        <div style={{ padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>Searching...</div>
-                                    ) : (
-                                        userResults.map(u => (
-                                            <div key={u.id} onMouseDown={() => startChat(u.username)} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.6rem 0.85rem', cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}>
-                                                <div style={{ width: '30px', height: '30px', border: '2px solid #000', overflow: 'hidden' }}>
-                                                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} alt={u.username} style={{ width: '100%', height: '100%' }} />
-                                                </div>
-                                                <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700 }}>{u.username}</p>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div style={{ flex: 1, overflowY: 'auto' }}>
-                        {loading ? (
-                            <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>LOADING...</div>
-                        ) : (
-                            filtered.map((convo) => {
-                                const other = convo.other_participant;
-                                const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${other?.username || 'anon'}`;
-                                const isUnread = unreadCounts[convo.id];
-
-                                return (
-                                    <div 
-                                        key={convo.id} 
-                                        onClick={() => handleSelectChat(convo.id)} 
-                                        style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '0.75rem', 
-                                            padding: '0.875rem 1rem', 
-                                            borderBottom: '2px solid #f0f0f0', 
-                                            cursor: 'pointer', 
-                                            background: activeChatId === convo.id ? '#f5f5f5' : 'transparent',
-                                            position: 'relative',
-                                            borderLeft: isUnread ? '6px solid var(--accent-color)' : 'none'
-                                        }}
-                                    >
-                                        <div style={{ position: 'relative', width: '44px', height: '44px', border: '2px solid #000', overflow: 'hidden' }}>
-                                            <img src={avatarUrl} alt={other?.username} style={{ width: '100%', height: '100%' }} />
-                                            {isUnread && (
-                                                <div style={{ position: 'absolute', top: -1, right: -1, width: 12, height: 12, background: 'var(--accent-color)', border: '2px solid #000', borderRadius: '50%' }} />
-                                            )}
-                                        </div>
-                                        <div style={{ flex: 1, overflow: 'hidden' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 700 }}>{other?.username || 'Unknown'}</span>
-                                                    {isUnread && (
-                                                        <span style={{ fontSize: '0.55rem', fontWeight: 900, background: 'var(--accent-color)', padding: '1px 4px', border: '1.5px solid #000', fontFamily: 'var(--font-mono)' }}>NEW</span>
-                                                    )}
-                                                </div>
-                                                <span 
-                                                    onClick={(e) => { e.stopPropagation(); toggleVisibility(e, convo.id); }}
-                                                    style={{ cursor: 'pointer', color: convo.is_public ? 'var(--accent-color)' : '#bbb' }}
-                                                >
-                                                    {convo.is_public ? <Eye size={14} /> : <EyeOff size={14} />}
-                                                </span>
-                                            </div>
-                                            <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: isUnread ? '#000' : '#555', fontWeight: isUnread ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {convo.last_message?.text || 'No messages yet'}
-                                            </p>
-                                        </div>
+                    {loading ? (
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', opacity: 0.5 }}>LOADING...</div>
+                    ) : (
+                        filtered.map((convo) => {
+                            const other = convo.other_participant;
+                            const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${other?.username || 'anon'}`;
+                            const isUnread = unreadCounts[convo.id];
+                            const isActive = activeChatId === convo.id;
+                            return (
+                                <div 
+                                    key={convo.id} 
+                                    onClick={() => handleSelectChat(convo.id)} 
+                                    style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.5rem', 
+                                        padding: '0.4rem 0.85rem', 
+                                        border: isActive ? '2px solid #000' : '2px solid #e0e0e0', 
+                                        background: isActive ? '#000' : '#fff',
+                                        color: isActive ? '#fff' : '#000',
+                                        cursor: 'pointer',
+                                        minWidth: 'fit-content',
+                                        position: 'relative',
+                                        boxShadow: isActive ? '3px 3px 0 var(--accent-color)' : 'none',
+                                        transition: 'all 0.1s ease'
+                                    }}
+                                    title={convo.last_message?.text || 'No messages'}
+                                >
+                                    <div style={{ position: 'relative', width: '28px', height: '28px', border: isActive ? '2px solid #fff' : '2px solid #000', overflow: 'hidden', flexShrink: 0 }}>
+                                        <img src={avatarUrl} alt={other?.username} style={{ width: '100%', height: '100%' }} />
+                                        {isUnread && (
+                                            <div style={{ position: 'absolute', top: -1, right: -1, width: 8, height: 8, background: 'var(--accent-color)', border: '1px solid #000', borderRadius: '50%' }} />
+                                        )}
                                     </div>
-                                );
-                            })
-                        )}
-                    </div>
-
-                    <div style={{ borderTop: '3px solid var(--border-color)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <div style={{ width: '36px', height: '36px', border: '2px solid #000', overflow: 'hidden' }}>
-                            <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.username || 'anon'}`} alt="me" style={{ width: '100%', height: '100%' }} />
-                        </div>
-                        <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', fontWeight: 700, flex: 1 }}>{currentUser?.username || 'GUEST'}</p>
-                        <button 
-                            onClick={handleLogout} 
-                            title="LOGOUT"
-                            style={{ 
-                                background: 'none', 
-                                border: 'none', 
-                                cursor: 'pointer', 
-                                color: '#FF4B5C',
-                                display: 'flex',
-                                alignItems: 'center',
-                                transition: 'transform 0.1s' 
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
-                            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                        >
-                            <LogOut size={20} />
-                        </button>
-                    </div>
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700 }}>{other?.username || 'Unknown'}</span>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
 
                 {/* Main Chat Area */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', background: 'var(--bg-color)', overflow: 'hidden', padding: '0 1.5rem 1.5rem 1.5rem' }}>
+                    <div style={{ width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', background: '#fff', border: '3px solid #000', boxShadow: '6px 6px 0 #000', position: 'relative', overflow: 'hidden' }}>
                     {!activeChatId ? (
                         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', opacity: 0.5 }}>
                             <MessageCircle size={48} style={{ marginBottom: '1rem' }} />
@@ -1710,15 +1736,33 @@ const MessagesPage = () => {
                         <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                                 {/* Messages */}
-                                <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div className="chat-messages-list" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                                     {chatMessages.map((msg, idx) => {
-                                        const isMe = (msg.sender?.username || msg.sender_username) === currentUser.username;
+                                        const senderName = msg.sender?.username || msg.sender_username || 'ANON';
+                                        const isMe = currentUser && senderName.toUpperCase() === currentUser.username?.toUpperCase();
                                         return (
-                                            <div key={idx} style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
-                                                <div style={{ background: isMe ? 'var(--accent-color)' : '#fff', color: isMe ? '#fff' : '#000', border: '2px solid #000', padding: '0.75rem 1rem', boxShadow: isMe ? '-2px 2px 0 #000' : '2px 2px 0 #000' }}>
-                                                    {msg.message_type === 'image' ? <img src={msg.attachment} style={{ maxWidth: '100%', borderRadius: '4px' }} alt="sent" /> : msg.message_type === 'audio' ? <audio controls src={msg.attachment} style={{ width: '100%' }} /> : msg.text}
+                                            <motion.div
+                                                key={idx}
+                                                className="chat-message-row"
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: 0.03 * idx, duration: 0.2 }}
+                                            >
+                                                <div className="chat-msg-container">
+                                                    <div className="chat-msg-line">
+                                                        <span className="chat-msg-sender" style={{ color: isMe ? 'var(--accent-color)' : '#000' }}>
+                                                            {isMe ? 'YOU' : senderName.toUpperCase()}:
+                                                        </span>
+                                                        {msg.message_type === 'image' ? (
+                                                            <img src={msg.attachment} alt="shared" style={{ maxWidth: '100%', maxHeight: 260, border: '3px solid #000', boxShadow: '4px 4px 0 #000', marginTop: 8, display: 'block' }} />
+                                                        ) : msg.message_type === 'audio' ? (
+                                                            <audio controls src={msg.attachment} style={{ width: '100%', marginTop: 8 }} />
+                                                        ) : (
+                                                            <span className="chat-msg-text">{msg.text}</span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            </motion.div>
                                         );
                                     })}
                                     <div ref={messagesEndRef} />
@@ -1801,6 +1845,144 @@ const MessagesPage = () => {
                         </div>
                     )}
                 </div>
+                </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{
+                borderTop: '3px solid #000',
+                background: '#000',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0.6rem 1.5rem',
+                gap: '1rem',
+                flexShrink: 0,
+                zIndex: 10
+            }}>
+                {/* Avatar + username */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ position: 'relative' }}>
+                        <div style={{ width: '32px', height: '32px', border: '2px solid var(--accent-color)', overflow: 'hidden', flexShrink: 0 }}>
+                            <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.username || 'anon'}`} alt="me" style={{ width: '100%', height: '100%' }} />
+                        </div>
+                        {/* Status dot */}
+                        <div style={{
+                            position: 'absolute', bottom: -2, right: -2,
+                            width: 10, height: 10, borderRadius: '50%',
+                            background: onlineStatus === 'ONLINE' ? '#22c55e' : onlineStatus === 'AWAY' ? '#f59e0b' : '#6b7280',
+                            border: '2px solid #000'
+                        }} />
+                    </div>
+                    <div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '1px' }}>
+                            {currentUser?.username?.toUpperCase() || 'GUEST'}
+                        </div>
+                        {/* Status toggle */}
+                        <div style={{ display: 'flex', gap: '0.3rem', marginTop: '2px' }}>
+                            {['ONLINE', 'AWAY', 'OFFLINE'].map(s => (
+                                <span
+                                    key={s}
+                                    onClick={() => setOnlineStatus(s)}
+                                    style={{
+                                        fontFamily: 'var(--font-mono)',
+                                        fontSize: '0.55rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        color: onlineStatus === s ? (s === 'ONLINE' ? '#22c55e' : s === 'AWAY' ? '#f59e0b' : '#9ca3af') : '#555',
+                                        letterSpacing: '0.5px'
+                                    }}
+                                >{s}</span>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ width: '2px', height: '28px', background: '#222', flexShrink: 0 }} />
+
+                {/* Search to start new chat */}
+                <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
+                    <input
+                        type="text"
+                        placeholder="NEW CHAT — search a user..."
+                        value={searchQuery}
+                        onChange={handleSearchChange}
+                        onFocus={() => searchQuery && setShowDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                        style={{
+                            width: '100%',
+                            padding: '0.4rem 0.75rem',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.7rem',
+                            background: '#1a1a1a',
+                            color: '#fff',
+                            border: '2px solid #333',
+                            outline: 'none',
+                        }}
+                    />
+                    {showDropdown && (
+                        <div style={{ position: 'absolute', bottom: '100%', left: 0, width: '100%', background: '#fff', border: '2px solid #000', zIndex: 100, maxHeight: '200px', overflowY: 'auto', boxShadow: '0 -4px 0 #000' }}>
+                            {searching ? (
+                                <div style={{ padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>Searching...</div>
+                            ) : (
+                                userResults.map(u => (
+                                    <div key={u.id} onMouseDown={() => startChat(u.username)} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.6rem 0.85rem', cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}>
+                                        <div style={{ width: '28px', height: '28px', border: '2px solid #000', overflow: 'hidden' }}>
+                                            <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} alt={u.username} style={{ width: '100%', height: '100%' }} />
+                                        </div>
+                                        <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700, color: '#000' }}>{u.username}</p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Spacer */}
+                <div style={{ flex: 1 }} />
+
+                {/* Unread badge */}
+                {Object.values(unreadCounts).filter(Boolean).length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <Bell size={14} color="#f59e0b" />
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 900, color: '#f59e0b' }}>
+                            {Object.values(unreadCounts).filter(Boolean).length} UNREAD
+                        </span>
+                    </div>
+                )}
+
+                {/* Live clock */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#666' }}>
+                    <Clock size={13} />
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 700 }}>
+                        {clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                </div>
+
+                {/* Divider */}
+                <div style={{ width: '2px', height: '28px', background: '#222', flexShrink: 0 }} />
+
+                {/* Settings */}
+                <button
+                    title="SETTINGS"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', display: 'flex', alignItems: 'center', padding: '0.35rem' }}
+                    onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                    onMouseLeave={e => e.currentTarget.style.color = '#888'}
+                >
+                    <Settings size={17} />
+                </button>
+
+                {/* Logout */}
+                <button
+                    onClick={handleLogout}
+                    title="LOGOUT"
+                    style={{ background: 'none', border: '2px solid #333', cursor: 'pointer', color: '#FF4B5C', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', fontWeight: 700 }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#FF4B5C'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#333'}
+                >
+                    <LogOut size={16} /> LOGOUT
+                </button>
             </div>
         </div>
     );

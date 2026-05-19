@@ -1,5 +1,9 @@
 from django.contrib import admin
-from .models import Profile, Follow, Conversation, Message, MessageReaction, ChatVisibility, AnonymousProfile, Post
+from .models import (
+    Profile, Follow, Conversation, Message, MessageReaction,
+    ConversationReaction, ChatVisibility, AnonymousProfile, Post,
+    MessageComment, MessagePoll, PollVote, SponsorshipRequest
+)
 
 
 @admin.register(Profile)
@@ -16,13 +20,13 @@ class FollowAdmin(admin.ModelAdmin):
 
 @admin.register(Conversation)
 class ConversationAdmin(admin.ModelAdmin):
-    list_display = ['id', 'created_at', 'updated_at']
+    list_display = ['id', 'created_at', 'updated_at', 'likes', 'dislikes', 'caps', 'smiles', 'views']
     filter_horizontal = ['participants']
 
 
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
-    list_display = ['id', 'sender', 'conversation', 'text', 'likes', 'dislikes', 'caps', 'views', 'timestamp']
+    list_display = ['id', 'sender', 'conversation', 'text', 'likes', 'dislikes', 'caps', 'smiles', 'views', 'timestamp']
     search_fields = ['sender__username', 'text']
     list_filter = ['timestamp']
 
@@ -31,6 +35,20 @@ class MessageAdmin(admin.ModelAdmin):
 class MessageReactionAdmin(admin.ModelAdmin):
     list_display = ['user', 'message', 'reaction_type', 'created_at']
     list_filter = ['reaction_type']
+
+
+@admin.register(ConversationReaction)
+class ConversationReactionAdmin(admin.ModelAdmin):
+    list_display = ['user', 'conversation', 'reaction_type', 'created_at']
+    list_filter = ['reaction_type']
+    search_fields = ['user__username']
+
+
+@admin.register(MessageComment)
+class MessageCommentAdmin(admin.ModelAdmin):
+    list_display = ['user', 'message', 'text', 'created_at']
+    search_fields = ['user__username', 'text']
+    list_filter = ['created_at']
 
 
 @admin.register(ChatVisibility)
@@ -50,3 +68,23 @@ class PostAdmin(admin.ModelAdmin):
     list_display = ['user', 'title', 'likes', 'views', 'created_at']
     search_fields = ['user__username', 'title', 'content']
     list_filter = ['created_at']
+
+
+@admin.register(MessagePoll)
+class MessagePollAdmin(admin.ModelAdmin):
+    list_display = ['id', 'question', 'option_a', 'option_b', 'votes_a', 'votes_b', 'is_system_generated']
+    search_fields = ['question']
+
+
+@admin.register(PollVote)
+class PollVoteAdmin(admin.ModelAdmin):
+    list_display = ['id', 'poll', 'user', 'selected_option']
+    list_filter = ['selected_option']
+
+
+@admin.register(SponsorshipRequest)
+class SponsorshipRequestAdmin(admin.ModelAdmin):
+    list_display = ['id', 'conversation', 'sponsor_name', 'user1', 'user2', 'user1_accepted', 'user2_accepted', 'created_at']
+    list_filter = ['user1_accepted', 'user2_accepted', 'created_at']
+    search_fields = ['sponsor_name']
+

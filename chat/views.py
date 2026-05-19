@@ -16,13 +16,15 @@ import json
 
 from .models import (
     Profile, Follow, Conversation, Message, MessageReaction,
-    ConversationReaction, ChatVisibility, AnonymousProfile, Post
+    ConversationReaction, ChatVisibility, AnonymousProfile, Post,
+    MessageComment
 )
 from .serializers import (
     UserSerializer, ProfileSerializer, RegisterSerializer,
     FollowSerializer, MessageSerializer, ConversationSerializer,
     ChatVisibilitySerializer, AnonymousProfileSerializer,
-    ChatterProfileSerializer, PostSerializer, MessageReactionSerializer
+    ChatterProfileSerializer, PostSerializer, MessageReactionSerializer,
+    MessageCommentSerializer
 )
 
 
@@ -599,6 +601,7 @@ def get_conversation(request, conversation_id):
     # Identify which participants should be anonymous
     display_usernames = {}
     chatter_data = []
+    other_chats_data = [] # To store [left_chats, right_chats]
 
     # Get participants in consistent order: [Creator, Other]
     all_p = conversation.participants.all().order_by('id') # Force deterministic order
@@ -606,6 +609,38 @@ def get_conversation(request, conversation_id):
     for participant in all_p:
         is_p_public = conversation.is_public_for_user(participant)
         
+        # --- Fetch other public chats for this participant ---
+        participant_other_chats = []
+        others = Conversation.objects.filter(
+            visibilities__user=participant,
+            visibilities__is_public=True
+        ).exclude(id=conversation.id).distinct().order_by('-updated_at')[:2]
+        
+        for oc in others:
+            # Find the OTHER person in that conversation
+            op = oc.participants.exclude(id=participant.id).first()
+            if op:
+                is_op_public = oc.is_public_for_user(op)
+                if is_op_public:
+                    op_name = op.username
+                    op_avatar = op.profile.avatar if op.profile.avatar else op_name[:2].upper()
+                    op_color = op.profile.color if hasattr(op.profile, 'color') and op.profile.color else 'var(--accent-color)'
+                else:
+                    op_anon = AnonymousProfile.get_or_create_for_user(oc, op)
+                    op_name = op_anon.fake_username
+                    op_avatar = '?'
+                    op_color = '#eee'
+                
+                participant_other_chats.append({
+                    'id': oc.id,
+                    'username': op_name,
+                    'handle': f"@{op_name.lower().replace(' ', '')}",
+                    'avatar': op_avatar,
+                    'color': op_color
+                })
+        other_chats_data.append(participant_other_chats)
+        # ------------------------------------------------------
+
         if is_p_public:
             profile = participant.profile
             # For public users, use their ACTUAL username and real identity
@@ -657,7 +692,9 @@ def get_conversation(request, conversation_id):
     return Response({
         'conversation': {
             **serialized_conv,
-            'participants': chatter_data
+            'participants': chatter_data,
+            'other_chats_left': other_chats_data[0] if len(other_chats_data) > 0 else [],
+            'other_chats_right': other_chats_data[1] if len(other_chats_data) > 1 else []
         },
         'messages': serialized_messages,
         'is_participant': is_participant
@@ -730,15 +767,23 @@ def react_to_conversation(request, conversation_id):
     if reaction_type not in ['like', 'dislike', 'cap', 'smile']:
         return Response({'error': 'Invalid reaction type'}, status=status.HTTP_400_BAD_REQUEST)
     
-    # Check if user already reacted with this type
-    existing = ConversationReaction.objects.filter(
+    # Check if there is new content since the last reaction of this type
+    last_msg = conversation.messages.order_by('-timestamp').first()
+    latest_reaction = ConversationReaction.objects.filter(
         conversation=conversation,
         user=request.user,
         reaction_type=reaction_type
-    ).first()
+    ).order_by('-created_at').first()
+
+    should_add_new = False
+    if last_msg and latest_reaction:
+        if last_msg.timestamp > latest_reaction.created_at:
+            should_add_new = True
+    elif not latest_reaction:
+        should_add_new = True
     
-    if existing:
-        # Removal: Decrement count
+    if latest_reaction and not should_add_new:
+        # Removal: Decrement count if no new content since last reaction
         if reaction_type == 'like':
             conversation.likes = max(0, conversation.likes - 1)
         elif reaction_type == 'dislike':
@@ -748,7 +793,7 @@ def react_to_conversation(request, conversation_id):
         elif reaction_type == 'smile':
             conversation.smiles = max(0, conversation.smiles - 1)
         
-        existing.delete()
+        latest_reaction.delete()
         conversation.save()
         return Response(ConversationSerializer(conversation, context={'request': request}).data)
     
@@ -806,11 +851,11 @@ def send_message(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def react_to_message(request, message_id):
-    """Add or update reaction to a message"""
+    """Add, update, or toggle off a reaction to a message"""
     message = get_object_or_404(Message, id=message_id)
     reaction_type = request.data.get('reaction_type')
     
-    if reaction_type not in ['like', 'dislike', 'cap']:
+    if reaction_type not in ['like', 'dislike', 'cap', 'smile']:
         return Response({'error': 'Invalid reaction type'}, status=status.HTTP_400_BAD_REQUEST)
     
     # Get or create reaction
@@ -820,28 +865,51 @@ def react_to_message(request, message_id):
         defaults={'reaction_type': reaction_type}
     )
     
-    if not created:
-        # Update existing reaction
+    if created:
+        # Increment new reaction count
+        if reaction_type == 'like':
+            message.likes += 1
+        elif reaction_type == 'dislike':
+            message.dislikes += 1
+        elif reaction_type == 'cap':
+            message.caps += 1
+        elif reaction_type == 'smile':
+            message.smiles += 1
+    else:
         old_type = reaction.reaction_type
-        if old_type != reaction_type:
-            # Decrement old reaction count
+        if old_type == reaction_type:
+            # Toggle off: remove the reaction
             if old_type == 'like':
                 message.likes = max(0, message.likes - 1)
             elif old_type == 'dislike':
                 message.dislikes = max(0, message.dislikes - 1)
             elif old_type == 'cap':
                 message.caps = max(0, message.caps - 1)
+            elif old_type == 'smile':
+                message.smiles = max(0, message.smiles - 1)
+            reaction.delete()
+        else:
+            # Change reaction type
+            if old_type == 'like':
+                message.likes = max(0, message.likes - 1)
+            elif old_type == 'dislike':
+                message.dislikes = max(0, message.dislikes - 1)
+            elif old_type == 'cap':
+                message.caps = max(0, message.caps - 1)
+            elif old_type == 'smile':
+                message.smiles = max(0, message.smiles - 1)
             
             reaction.reaction_type = reaction_type
             reaction.save()
-    
-    # Increment new reaction count
-    if reaction_type == 'like':
-        message.likes += 1
-    elif reaction_type == 'dislike':
-        message.dislikes += 1
-    elif reaction_type == 'cap':
-        message.caps += 1
+            
+            if reaction_type == 'like':
+                message.likes += 1
+            elif reaction_type == 'dislike':
+                message.dislikes += 1
+            elif reaction_type == 'cap':
+                message.caps += 1
+            elif reaction_type == 'smile':
+                message.smiles += 1
     
     message.save()
     
@@ -905,6 +973,48 @@ def increment_view(request, message_id):
     return Response({'views': message.views})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_message_comment(request, message_id):
+    """Add an inline comment to a specific message"""
+    message = get_object_or_404(Message, id=message_id)
+    text = request.data.get('text')
+    
+    if not text:
+        return Response({'error': 'Text is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    comment = MessageComment.objects.create(
+        message=message,
+        user=request.user,
+        text=text
+    )
+    
+    serializer = MessageCommentSerializer(comment)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_message(request, message_id):
+    """Delete a message"""
+    message = get_object_or_404(Message, id=message_id)
+    if message.sender != request.user:
+        return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+    message.delete()
+    return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_comment(request, comment_id):
+    """Delete a comment"""
+    comment = get_object_or_404(MessageComment, id=comment_id)
+    if comment.user != request.user:
+        return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+    comment.delete()
+    return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
 # ==================== Post Views ====================
 
 @api_view(['GET'])
@@ -927,3 +1037,21 @@ def create_post(request):
         request.user.profile.save()
         return Response(PostSerializer(post).data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """Change user password"""
+    user = request.user
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+    
+    if not old_password or not new_password:
+        return Response({'error': 'Both old and new passwords are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    if not user.check_password(old_password):
+        return Response({'error': 'Incorrect old password'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    user.set_password(new_password)
+    user.save()
+    return Response({'message': 'Password changed successfully'})

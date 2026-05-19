@@ -2,7 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
     Profile, Follow, Conversation, Message, MessageReaction,
-    ConversationReaction, ChatVisibility, AnonymousProfile, Post
+    ConversationReaction, ChatVisibility, AnonymousProfile, Post, MessageComment,
+    MessagePoll, PollVote, SponsorshipRequest
 )
 
 
@@ -69,20 +70,71 @@ class FollowSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class MessageCommentSerializer(serializers.ModelSerializer):
+    """Serializer for MessageComment model"""
+    username = serializers.CharField(source='user.username', read_only=True)
+    replies = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = MessageComment
+        fields = ['id', 'user', 'username', 'text', 'created_at', 'parent', 'replies']
+        read_only_fields = ['id', 'created_at', 'user']
+
+    def get_replies(self, obj):
+        if obj.replies.exists():
+            return MessageCommentSerializer(obj.replies.all(), many=True).data
+        return []
+
+
+class MessagePollSerializer(serializers.ModelSerializer):
+    """Serializer for MessagePoll model"""
+    user_vote = serializers.SerializerMethodField()
+    voters_a = serializers.SerializerMethodField()
+    voters_b = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MessagePoll
+        fields = ['id', 'question', 'option_a', 'option_b', 'votes_a', 'votes_b', 'is_system_generated', 'user_vote', 'voters_a', 'voters_b']
+        read_only_fields = ['id', 'votes_a', 'votes_b', 'is_system_generated']
+
+    def get_user_vote(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            try:
+                vote = PollVote.objects.get(poll=obj, user=request.user)
+                return vote.selected_option
+            except PollVote.DoesNotExist:
+                return None
+        return None
+
+    def get_voters_a(self, obj):
+        return list(obj.votes.filter(selected_option='A').values_list('user__username', flat=True))
+
+    def get_voters_b(self, obj):
+        return list(obj.votes.filter(selected_option='B').values_list('user__username', flat=True))
+
+
 class MessageSerializer(serializers.ModelSerializer):
     """Serializer for Message model"""
     sender_username = serializers.CharField(source='sender.username', read_only=True)
+    comments = serializers.SerializerMethodField()
     dominant_reaction = serializers.ReadOnlyField()
     user_reaction = serializers.SerializerMethodField()
+    poll_data = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             'id', 'conversation', 'sender', 'sender_username', 'text', 'message_type', 'attachment',
-            'is_read', 'timestamp', 'likes', 'dislikes', 'caps', 'views',
-            'dominant_reaction', 'user_reaction'
+            'is_read', 'timestamp', 'likes', 'dislikes', 'caps', 'smiles', 'views',
+            'dominant_reaction', 'user_reaction', 'comments', 'poll_data'
         ]
-        read_only_fields = ['id', 'sender', 'timestamp', 'likes', 'dislikes', 'caps', 'views']
+        read_only_fields = ['id', 'sender', 'timestamp', 'likes', 'dislikes', 'caps', 'smiles', 'views']
+
+    def get_poll_data(self, obj):
+        if obj.message_type == 'poll' and hasattr(obj, 'poll_data'):
+            return MessagePollSerializer(obj.poll_data, context=self.context).data
+        return None
 
     def get_user_reaction(self, obj):
         """Get current user's reaction to this message"""
@@ -95,6 +147,19 @@ class MessageSerializer(serializers.ModelSerializer):
                 return None
         return None
 
+    def get_comments(self, obj):
+        """Get only top-level comments"""
+        top_level_comments = obj.comments.filter(parent__isnull=True)
+        return MessageCommentSerializer(top_level_comments, many=True).data
+
+
+class SponsorshipRequestSerializer(serializers.ModelSerializer):
+    """Serializer for SponsorshipRequest model"""
+    class Meta:
+        model = SponsorshipRequest
+        fields = ['id', 'conversation', 'sponsor_name', 'sponsor_text', 'user1', 'user2', 'user1_accepted', 'user2_accepted', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
 
 class ConversationSerializer(serializers.ModelSerializer):
     """Serializer for Conversation model"""
@@ -102,15 +167,21 @@ class ConversationSerializer(serializers.ModelSerializer):
     is_public = serializers.SerializerMethodField()
     other_participant = serializers.SerializerMethodField()
     user_reactions = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    sponsorships = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
         fields = [
             'id', 'last_message', 'is_public', 
             'other_participant', 'likes', 'dislikes', 'caps', 
-            'smiles', 'views', 'user_reactions', 'created_at', 'updated_at'
+            'smiles', 'views', 'user_reactions', 'created_at', 'updated_at',
+            'status', 'sponsorships'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_sponsorships(self, obj):
+        return SponsorshipRequestSerializer(obj.sponsorships.all(), many=True).data
 
     def get_is_public(self, obj):
         """Check if conversation is public for current user or anyone"""
@@ -130,12 +201,58 @@ class ConversationSerializer(serializers.ModelSerializer):
         return None
 
     def get_user_reactions(self, obj):
-        """Get current user's reactions to this conversation"""
+        """Get current user's reactions that were made AFTER the last message"""
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            reactions = ConversationReaction.objects.filter(conversation=obj, user=request.user)
+            last_msg = obj.messages.order_by('-timestamp').first()
+            if last_msg:
+                # Only return reactions made since the latest message
+                reactions = ConversationReaction.objects.filter(
+                    conversation=obj, 
+                    user=request.user,
+                    created_at__gte=last_msg.timestamp
+                )
+            else:
+                reactions = ConversationReaction.objects.filter(conversation=obj, user=request.user)
             return [r.reaction_type for r in reactions]
         return []
+
+    def get_status(self, obj):
+        """Return the conversation status relative to other chats"""
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.db.models import Count, Q, Max, Avg
+        
+        now = timezone.now()
+        ten_mins_ago = now - timedelta(minutes=10)
+        
+        # Velocity of current chat
+        current_v = obj.conversation_reactions.filter(created_at__gte=ten_mins_ago).count()
+        
+        # Get global stats for comparison
+        stats = Conversation.objects.annotate(
+            velocity=Count('conversation_reactions', filter=Q(conversation_reactions__created_at__gte=ten_mins_ago))
+        ).aggregate(max_v=Max('velocity'), avg_v=Avg('velocity'))
+        
+        max_v = stats['max_v'] or 0
+        avg_v = stats['avg_v'] or 0
+        
+        if current_v > 0:
+            if current_v >= max_v and current_v > 5:
+                return 'LEGENDARY'
+            if current_v >= avg_v * 2:
+                return 'ON FIRE'
+            if current_v > avg_v:
+                return 'HEATING UP'
+            return 'ACTIVE'
+            
+        # Fallback to total if it's a slow but massive thread
+        total = (obj.likes or 0) + (obj.dislikes or 0) + (obj.caps or 0) + (obj.smiles or 0)
+        if total > 500: return 'LEGENDARY'
+        if total > 200: return 'ON FIRE'
+        if total > 100: return 'HEATING UP'
+        
+        return 'CHILLING'
 
 
 class ChatVisibilitySerializer(serializers.ModelSerializer):
