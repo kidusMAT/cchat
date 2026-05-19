@@ -15,6 +15,9 @@
     --border-width: 3px;
     --hard-shadow: 8px 8px 0px 0px #000000;
     --small-shadow: 4px 4px 0px 0px #000000;
+    --shadow-color: #000000;
+    --inverse-bg: #000000;
+    --inverse-text: #ffffff;
 }
 
 * {
