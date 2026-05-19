@@ -1322,3 +1322,180 @@ body {
 .sponsor-status.rejected {
     color: #EF4444;
 }
+
+/* ────────────────────────────────────────────────────────────── */
+/* ─── RESPONSIVE & MOBILE OVERRIDES (NEOBRUTALIST STYLE) ─────── */
+/* ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .hero {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .header, .chat-header-bar {
+        padding: 0.75rem 1.5rem !important;
+    }
+    .hero {
+        margin: 1.5rem 0;
+        padding: 0 1.5rem;
+        gap: 1.5rem;
+    }
+    .hero-tag {
+        width: 100% !important;
+    }
+    .hero-title {
+        font-size: clamp(1.8rem, 8vw, 3.5rem);
+        margin-bottom: 1.5rem;
+    }
+    .hero-card {
+        margin-top: 0 !important;
+    }
+    .thread-grid {
+        padding: 0 1.5rem;
+        margin-bottom: 3rem;
+    }
+}
+
+@media (max-width: 1024px) {
+    .chat-page-layout {
+        grid-template-columns: 1fr !important;
+        padding: 0.5rem 1rem !important;
+        gap: 0 !important;
+    }
+    .chat-sidebar {
+        display: none !important; /* Hide sidebar in grid; accessible via Modal */
+    }
+    .chat-center {
+        height: 100% !important;
+    }
+}
+
+/* Brutalist Modal Overlay & content for responsive profile sidebars */
+.brutalist-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3000;
+    padding: 1rem;
+    backdrop-filter: blur(2px);
+}
+
+.brutalist-modal-content {
+    background: var(--bg-color);
+    border: 3px solid #000;
+    box-shadow: 8px 8px 0px 0px #000;
+    width: 100%;
+    max-width: 380px;
+    position: relative;
+    padding: 2.5rem 1.25rem 1.25rem 1.25rem;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: modalPop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.brutalist-modal-content .chat-sidebar {
+    display: flex !important;
+}
+
+@keyframes modalPop {
+    from { transform: scale(0.92); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.brutalist-close-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--accent-color);
+    color: #fff;
+    border: 2px solid #000;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-weight: 900;
+    font-size: 0.8rem;
+    box-shadow: 2px 2px 0px #000;
+    transition: all 0.1s ease;
+}
+
+.brutalist-close-btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0px #000;
+}
+
+.brutalist-close-btn:active {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0px #000;
+}
+
+/* Messages Dashboard responsiveness classes */
+.messages-main-area {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    background: var(--bg-color);
+    overflow: hidden;
+    padding: 0 1.5rem 1.5rem 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .messages-main-area {
+        padding: 0 0.5rem 0.5rem 0.5rem !important;
+    }
+}
+
+.messages-footer {
+    border-top: 3px solid #000;
+    background: #000;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 1.5rem;
+    gap: 1rem;
+    flex-shrink: 0;
+    z-index: 10;
+    transition: all 0.2s ease;
+}
+
+.footer-clock {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #666;
+}
+
+.footer-logout-btn-text {
+    display: inline;
+}
+
+@media (max-width: 900px) {
+    .messages-footer {
+        padding: 0.5rem 1rem !important;
+        gap: 0.75rem !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .footer-clock {
+        display: none !important; /* Hide clock on mobile screen to make space */
+    }
+}
+
+@media (max-width: 640px) {
+    .footer-logout-btn-text {
+        display: none !important; /* Hide label text on mobile to display only the icon */
+    }
+    .messages-footer {
+        gap: 0.5rem !important;
+        padding: 0.5rem !important;
+    }
+}

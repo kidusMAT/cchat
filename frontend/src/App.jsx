@@ -641,6 +641,7 @@ const ChatPage = () => {
   const [socket, setSocket] = useState(null);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const messagesRef = useRef(null);
+  const [selectedProfileModal, setSelectedProfileModal] = useState(null);
 
   const formatChatTime = (ts) => {
       if (!ts || ts === 'just now') return ts;
@@ -969,12 +970,24 @@ const ChatPage = () => {
             {/* Center chat column — fills remaining height */}
             <div className="chat-center" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
               <div className="chat-thread-header">
-                <div className="chat-thread-participants">
-                  <div className="chat-thread-avatar" style={{ background: p1.color }}>{p1.avatar}</div>
-                  <span className="chat-thread-name">{p1.username}</span>
+                <div className="chat-thread-participants" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <div 
+                    onClick={() => setSelectedProfileModal('left')}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}
+                    title={`View profile of ${p1.username}`}
+                  >
+                    <div className="chat-thread-avatar" style={{ background: p1.color }}>{p1.avatar}</div>
+                    <span className="chat-thread-name">{p1.username}</span>
+                  </div>
                   <span className="chat-vs">vs</span>
-                  <div className="chat-thread-avatar" style={{ background: p2.color }}>{p2.avatar}</div>
-                  <span className="chat-thread-name">{p2.username}</span>
+                  <div 
+                    onClick={() => setSelectedProfileModal('right')}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}
+                    title={`View profile of ${p2.username}`}
+                  >
+                    <div className="chat-thread-avatar" style={{ background: p2.color }}>{p2.avatar}</div>
+                    <span className="chat-thread-name">{p2.username}</span>
+                  </div>
                 </div>
                 <div className="chat-thread-meta">
                   <span className="chat-status-badge">{chatData.status}</span>
@@ -1168,6 +1181,41 @@ const ChatPage = () => {
             <ProfileSidebar participant={p2} otherChats={chatData.otherChats.right} 
               messageCount={p2MsgCount} currentUser={currentUser} />
           </div>
+
+          {/* Responsive Profile Drawer Modal */}
+          <AnimatePresence>
+            {selectedProfileModal && (
+              <motion.div 
+                className="brutalist-modal-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedProfileModal(null)}
+              >
+                <motion.div 
+                  className="brutalist-modal-content"
+                  onClick={(e) => e.stopPropagation()}
+                  initial={{ scale: 0.95, y: 15 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.95, y: 15 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+                >
+                  <button 
+                    className="brutalist-close-btn"
+                    onClick={() => setSelectedProfileModal(null)}
+                  >
+                    ✕
+                  </button>
+                  <ProfileSidebar 
+                    participant={selectedProfileModal === 'left' ? p1 : p2} 
+                    otherChats={selectedProfileModal === 'left' ? chatData.otherChats.left : chatData.otherChats.right}
+                    messageCount={selectedProfileModal === 'left' ? p1MsgCount : p2MsgCount}
+                    currentUser={currentUser}
+                  />
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </AnimatePresence>
 
@@ -1725,7 +1773,7 @@ const MessagesPage = () => {
                 </div>
 
                 {/* Main Chat Area */}
-                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', background: 'var(--bg-color)', overflow: 'hidden', padding: '0 1.5rem 1.5rem 1.5rem' }}>
+                <div className="messages-main-area">
                     <div style={{ width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', background: '#fff', border: '3px solid #000', boxShadow: '6px 6px 0 #000', position: 'relative', overflow: 'hidden' }}>
                     {!activeChatId ? (
                         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', opacity: 0.5 }}>
@@ -1849,17 +1897,7 @@ const MessagesPage = () => {
             </div>
 
             {/* Footer */}
-            <div style={{
-                borderTop: '3px solid #000',
-                background: '#000',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '0.6rem 1.5rem',
-                gap: '1rem',
-                flexShrink: 0,
-                zIndex: 10
-            }}>
+            <div className="messages-footer">
                 {/* Avatar + username */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                     <div style={{ position: 'relative' }}>
@@ -1953,7 +1991,7 @@ const MessagesPage = () => {
                 )}
 
                 {/* Live clock */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#666' }}>
+                <div className="footer-clock" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#666' }}>
                     <Clock size={13} />
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 700 }}>
                         {clock.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1981,7 +2019,7 @@ const MessagesPage = () => {
                     onMouseEnter={e => e.currentTarget.style.borderColor = '#FF4B5C'}
                     onMouseLeave={e => e.currentTarget.style.borderColor = '#333'}
                 >
-                    <LogOut size={16} /> LOGOUT
+                    <LogOut size={16} /> <span className="footer-logout-btn-text">LOGOUT</span>
                 </button>
             </div>
         </div>
