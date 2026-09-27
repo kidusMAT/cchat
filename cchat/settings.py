@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 import dj_database_url
 from datetime import timedelta
 
@@ -55,6 +56,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'channels',
     'chat',
@@ -102,11 +104,21 @@ DATABASES = {
     }
 }
 
-if os.environ.get('DATABASE_URL'):
+if os.environ.get('DATABASE_URL') and (
+    not DEBUG or os.environ.get('USE_REMOTE_DATABASE', 'False') == 'True'
+):
     DATABASES['default'] = dj_database_url.config(
         conn_max_age=600,
         ssl_require=True
     )
+
+# Keep the test suite isolated from any DATABASE_URL in the developer's .env.
+if 'test' in sys.argv:
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
 
 
 # Password validation

@@ -15,8 +15,21 @@ class Profile(models.Model):
     followers_count = models.IntegerField(default=0)
     following_count = models.IntegerField(default=0)
     posts_count = models.IntegerField(default=0)
+    default_conversations_public = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Verification fields
+    VERIFICATION_STATUSES = [
+        ('UNVERIFIED', 'Unverified'),
+        ('PENDING', 'Pending'),
+        ('VERIFIED', 'Verified'),
+        ('REJECTED', 'Rejected')
+    ]
+    verification_status = models.CharField(max_length=10, choices=VERIFICATION_STATUSES, default='UNVERIFIED')
+    verification_text = models.TextField(blank=True)
+    verification_url = models.URLField(blank=True)
+    verification_reviewed_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='verifications_reviewed')
+    verification_reviewed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.user.username}'s profile"
@@ -66,6 +79,7 @@ class Conversation(models.Model):
     caps = models.IntegerField(default=0)
     smiles = models.IntegerField(default=0)
     views = models.IntegerField(default=0)
+    is_removed = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-updated_at']
@@ -78,7 +92,7 @@ class Conversation(models.Model):
 
     def get_last_message(self):
         """Get the last message in this conversation"""
-        return self.messages.first()
+        return self.messages.filter(is_removed=False).first()
 
     def is_public_for_user(self, user):
         """Check if this conversation is public for a specific user"""
@@ -142,6 +156,7 @@ class Message(models.Model):
     smiles = models.IntegerField(default=0)
     views = models.IntegerField(default=0)
     is_edited = models.BooleanField(default=False)
+    is_removed = models.BooleanField(default=False)
 
 
     class Meta:
@@ -317,8 +332,9 @@ class SponsorshipRequest(models.Model):
     sponsor_text = models.CharField(max_length=200)
     user1 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sponsorship_requests_as_user1', null=True)
     user2 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sponsorship_requests_as_user2', null=True)
-    user1_accepted = models.BooleanField(default=False)
-    user2_accepted = models.BooleanField(default=False)
+    # Allow null to represent "not yet responded". Consumers set True/False.
+    user1_accepted = models.BooleanField(null=True, default=None)
+    user2_accepted = models.BooleanField(null=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -326,3 +342,43 @@ class SponsorshipRequest(models.Model):
 
     def __str__(self):
         return f"Sponsorship from {self.sponsor_name} for chat {self.conversation.id}"
+
+    @property
+    def status(self):
+        """Derive overall status: PENDING / ACCEPTED / REJECTED"""
+        if self.user1_accepted is True and self.user2_accepted is True:
+            return 'ACCEPTED'
+        # If either explicitly rejected
+        if self.user1_accepted is False or self.user2_accepted is False:
+            return 'REJECTED'
+        return 'PENDING'
+
+
+class Report(models.Model):
+    REASONS = [(v, label) for v, label in [
+        ('harassment', 'Harassment'), ('doxxing', 'Doxxing or personal information'),
+        ('minor', 'Involves a minor'), ('non_consensual', 'Non-consensual sharing'),
+        ('spam', 'Spam'), ('other', 'Other'),
+    ]]
+    STATUSES = [('PENDING', 'Pending'), ('REVIEWED', 'Reviewed'), ('ACTIONED', 'Actioned'), ('DISMISSED', 'Dismissed')]
+    reporter = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reports_filed')
+    conversation = models.ForeignKey(Conversation, null=True, blank=True, on_delete=models.CASCADE, related_name='reports')
+    message = models.ForeignKey(Message, null=True, blank=True, on_delete=models.CASCADE, related_name='reports')
+    reason = models.CharField(max_length=20, choices=REASONS)
+    detail = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=STATUSES, default='PENDING')
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='reports_reviewed')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=(models.Q(conversation__isnull=False, message__isnull=True) | models.Q(conversation__isnull=True, message__isnull=False)), name='report_exactly_one_target')]
+
+
+class Block(models.Model):
+    blocker = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blocks_made')
+    blocked = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blocks_received')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['blocker', 'blocked'], name='unique_user_block'), models.CheckConstraint(condition=~models.Q(blocker=models.F('blocked')), name='cannot_block_self')]

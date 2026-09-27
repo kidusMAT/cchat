@@ -87,4 +87,20 @@ class SponsorshipRequestAdmin(admin.ModelAdmin):
     list_display = ['id', 'conversation', 'sponsor_name', 'user1', 'user2', 'user1_accepted', 'user2_accepted', 'created_at']
     list_filter = ['user1_accepted', 'user2_accepted', 'created_at']
     search_fields = ['sponsor_name']
+    def save_model(self, request, obj, form, change):
+        # When creating via admin, set user1/user2 from conversation participants and validate
+        if not change:
+            participants = list(obj.conversation.participants.all()[:2])
+            if len(participants) != 2:
+                raise admin.ValidationError('Conversation must have exactly 2 participants for sponsorships')
+            # Prevent stacking pending requests
+            from django.db.models import Q
+            existing = SponsorshipRequest.objects.filter(conversation=obj.conversation).exclude(
+                Q(user1_accepted=True, user2_accepted=True) | Q(user1_accepted=False) | Q(user2_accepted=False)
+            ).exists()
+            if existing:
+                raise admin.ValidationError('A pending sponsorship already exists for this conversation')
+            obj.user1 = participants[0]
+            obj.user2 = participants[1]
+        super().save_model(request, obj, form, change)
 

@@ -9,10 +9,17 @@ from .models import (
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for User model"""
+    is_verified = serializers.SerializerMethodField()
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_verified']
         read_only_fields = ['id']
+
+    def get_is_verified(self, obj):
+        try:
+            return obj.profile.verification_status == 'VERIFIED'
+        except Exception:
+            return False
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -25,9 +32,11 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'bio', 'avatar', 'avatar_url', 'rank',
             'followers_count', 'following_count', 'posts_count',
+            'default_conversations_public',
+            'verification_status', 'verification_text', 'verification_url',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'rank', 'followers_count', 'following_count', 'posts_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'rank', 'followers_count', 'following_count', 'posts_count', 'created_at', 'updated_at', 'verification_status', 'verification_reviewed_by', 'verification_reviewed_at']
 
     def get_avatar_url(self, obj):
         return obj.get_avatar_url()

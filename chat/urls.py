@@ -3,6 +3,16 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
 urlpatterns = [
+    path('report/conversation/<int:target_id>/', views.create_report, {'target_type': 'conversation'}, name='report_conversation'),
+    path('report/message/<int:target_id>/', views.create_report, {'target_type': 'message'}, name='report_message'),
+    path('moderation/reports/', views.moderation_reports, name='moderation_reports'),
+    path('moderation/sponsorships/create/', views.create_sponsorship_request, name='create_sponsorship_request'),
+    path('moderation/sponsorships/', views.list_sponsorship_requests, name='list_sponsorship_requests'),
+    path('moderation/reports/<int:report_id>/action/', views.moderate_report, name='moderate_report'),
+    path('block/<str:username>/', views.manage_block, name='manage_block'),
+    path('blocks/', views.list_blocks, name='list_blocks'),
+    path('polls/<int:poll_id>/vote/', views.vote_on_poll, name='vote_on_poll'),
+    path('conversations/<int:conversation_id>/sponsorships/<int:sponsorship_id>/vote/', views.vote_on_sponsorship, name='vote_on_sponsorship'),
     # Authentication
     path('auth/register/', views.register_user, name='register'),
     path('auth/login/', views.login_user, name='login'),
@@ -14,7 +24,13 @@ urlpatterns = [
     # Profile
     path('profile/', views.get_profile, name='get_profile'),
     path('profile/update/', views.update_profile, name='update_profile'),
+    path('account/deactivate/', views.deactivate_account, name='deactivate_account'),
     path('profile/<str:username>/', views.get_user_profile, name='get_user_profile'),
+
+    # Verification
+    path('verification/apply/', views.apply_verification, name='apply_verification'),
+    path('moderation/verification-requests/', views.moderation_verification_requests, name='moderation_verification_requests'),
+    path('moderation/verification-requests/<int:profile_id>/review/', views.review_verification_request, name='review_verification_request'),
     
     # Follow
     path('follow/<str:username>/', views.follow_user, name='follow_user'),

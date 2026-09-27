@@ -35,6 +35,7 @@ import {
   Clock
 } from 'lucide-react';
 import axios from 'axios';
+import SettingsPanel from './Settings.jsx';
 
 // Configure axios
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -262,7 +263,9 @@ const ThreadCard = ({ thread, currentUser }) => {
               >
                 {getInitials(p.username)}
               </div>
-              <span className="participant-name" style={{ color: getAvatarStyle(p.username, i).background }}>{p.username}</span>
+              <span className="participant-name" style={{ color: getAvatarStyle(p.username, i).background }}>
+                {p.username}{p.is_verified ? <span className="verified-badge" style={{ marginLeft: 6, color: '#0ea5a4' }}>✓</span> : null}
+              </span>
             </div>
             {i < participants.length - 1 && <span style={{ opacity: 0.3, fontWeight: 900, margin: '0 0.5rem' }}>×</span>}
           </React.Fragment>
@@ -295,85 +298,6 @@ const ThreadCard = ({ thread, currentUser }) => {
   );
 };
 
-const mockThreads = [
-  {
-    conversation_id: 1,
-    chatters: [{ username: 'Alex Chen' }, { username: 'NeonWraith' }],
-    messages: [
-      { sender_username: 'ALEX', text: 'should we switch to rust for the backend?' },
-      { sender_username: 'ANON', text: 'the memory safety alone makes it worth considering' },
-      { sender_username: 'ALEX', text: 'but the learning curve for the team...' },
-      { sender_username: 'ANON', text: 'we could start with one microservice' },
-      { sender_username: 'ALEX', text: 'good call. let\'s prototype the auth service' },
-      { sender_username: 'ANON', text: 'I\'ll set up the repo tonight' }
-    ],
-    created_at: '6 days ago',
-    likes: 12, dislikes: 5, caps: 31, views: 560
-  },
-  {
-    conversation_id: 4,
-    chatters: [{ username: 'StealthCipher' }, { username: 'PixelLynx' }],
-    messages: [
-      { sender_username: 'ANON', text: 'did you see the new quantum processor specs?' },
-      { sender_username: 'ANON', text: 'yeah 2048 qubits is insane' },
-      { sender_username: 'ANON', text: 'imagine running ML models on that' },
-      { sender_username: 'ANON', text: 'we\'d need to rethink our entire architecture' }
-    ],
-    created_at: '5 days ago',
-    likes: 20, dislikes: 25, caps: 69, views: '4,554'
-  },
-  {
-    conversation_id: 7,
-    chatters: [{ username: 'SarahV' }, { username: 'CodeNinja' }],
-    messages: [
-      { sender_username: 'SARAH', text: 'CSS grid or flexbox for the new dashboard?' },
-      { sender_username: 'NINJA', text: 'grid for the overall layout, flexbox for components inside' },
-      { sender_username: 'SARAH', text: 'makes sense. getting tired of nested divs' },
-      { sender_username: 'NINJA', text: 'CSS subgrid is shipping in all browsers now though' },
-      { sender_username: 'SARAH', text: 'Wait really? Finally!' }
-    ],
-    created_at: '2 hrs ago',
-    likes: 45, dislikes: 2, caps: 88, views: '1,200'
-  },
-  {
-    conversation_id: 12,
-    chatters: [{ username: 'UX_Master' }, { username: 'DevOpsDan' }],
-    messages: [
-      { sender_username: 'UX', text: 'the deployment pipeline is taking 45 minutes now...' },
-      { sender_username: 'DAN', text: 'I know, the test suite bloated up' },
-      { sender_username: 'DAN', text: 'I am splitting it into parallel jobs today' },
-      { sender_username: 'UX', text: 'thank god, I can\'t iterate fast enough' }
-    ],
-    created_at: '12 mins ago',
-    likes: 104, dislikes: 12, caps: 201, views: '8,900'
-  },
-  {
-    conversation_id: 15,
-    chatters: [{ username: 'RogueOne' }, { username: 'Echo' }],
-    messages: [
-      { sender_username: 'ROGUE', text: 'is the staging server down?' },
-      { sender_username: 'ECHO', text: 'restarting the database, give it 2 mins' }
-    ],
-    created_at: '1 min ago',
-    likes: 3, dislikes: 0, caps: 5, views: '32'
-  },
-  {
-    conversation_id: 19,
-    chatters: [{ username: 'VibeCheck' }, { username: 'NullPointer' }],
-    messages: [
-      { sender_username: 'VIBE', text: 'anyone else feel like AI is moving too fast?' },
-      { sender_username: 'NULL', text: 'we literally can\'t keep up with the papers anymore' },
-      { sender_username: 'VIBE', text: 'I gave up reading arxiv daily, it\'s overwhelming' },
-      { sender_username: 'NULL', text: 'just follow the summaries on twitter honestly' },
-      { sender_username: 'VIBE', text: 'fair. but then you miss the details that matter' },
-      { sender_username: 'NULL', text: 'true... pick your battles I guess' },
-      { sender_username: 'VIBE', text: 'the next 6 months are going to be wild though' }
-    ],
-    created_at: 'just now',
-    likes: 87, dislikes: 4, caps: 120, views: '6,210'
-  }
-];
-
 const LandingPage = () => {
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -397,11 +321,11 @@ const LandingPage = () => {
           setThreads(response.data);
           localStorage.setItem('recommended_chats_ids', JSON.stringify(response.data.map(t => t.conversation_id)));
         } else {
-          setThreads(mockThreads);
+          setThreads([]);
         }
       } catch (error) {
         console.error("Error fetching threads:", error);
-        setThreads(mockThreads);
+        setThreads([]);
       } finally {
         setLoading(false);
       }
@@ -449,128 +373,6 @@ const LandingPage = () => {
   );
 };
 
-const mockChatData = {
-  1: {
-    participants: [
-      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)', is_public: true },
-      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000', is_public: false }
-    ],
-    messages: [
-      { sender: 'ALEX', text: 'should we switch to rust for the backend?' },
-      { sender: 'ANON', text: 'the memory safety alone makes it worth considering' },
-      { sender: 'ALEX', text: 'but the learning curve for the team...' },
-      { sender: 'ANON', text: 'we could start with one microservice' },
-      { sender: 'ALEX', text: 'good call. let\'s prototype the auth service' },
-      { sender: 'ANON', text: 'I\'ll set up the repo tonight' }
-    ],
-    status: 'HEATING UP',
-    created_at: '6 days ago',
-    visibility: 'PUBLIC',
-    likes: 5, dislikes: 9, caps: 69, smiles: 34, views: '1,176', watching: 139,
-    otherChats: {
-      left: [{ id: 7, username: 'Taylor Kim', handle: '@taylorkim', avatar: 'TK', color: '#000' }, { id: 12, username: 'Sam Rivera', handle: '@samrivera', avatar: 'SR', color: '#6B7280' }],
-      right: [{ id: 4, username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6' }, { id: 19, username: 'Jordan Blake', handle: '@jordanblake', avatar: 'JB', color: 'var(--accent-color)' }]
-    }
-  },
-  4: {
-    participants: [
-      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000', is_public: false },
-      { username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6', is_public: true }
-    ],
-    messages: [
-      { sender: 'NEON', text: 'Casey, have you seen the new quantum encryption protocol?' },
-      { sender: 'CN', text: 'yeah, it is pretty impressive. 0.01ms latency.' },
-      { sender: 'NEON', text: 'insane. we should integrate it into the core engine.' }
-    ],
-    status: 'ACTIVE',
-    created_at: '5 days ago',
-    visibility: 'PUBLIC',
-    likes: 8, dislikes: 3, caps: 22, smiles: 15, views: '4,554', watching: 87,
-    otherChats: {
-      left: [{ id: 1, username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)' }, { id: 19, username: 'Jordan Blake', handle: '@jordanblake', avatar: 'JB', color: 'var(--accent-color)' }],
-      right: [{ id: 15, username: 'RogueOne', handle: '@rogueone', avatar: 'RO', color: 'var(--accent-color)' }]
-    }
-  },
-  7: {
-    participants: [
-      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)', is_public: true },
-      { username: 'Taylor Kim', handle: '@taylorkim', avatar: 'TK', color: '#000', is_public: true }
-    ],
-    messages: [
-      { sender: 'ALEX', text: 'Taylor, are we still on for the code review at 3?' },
-      { sender: 'TK', text: 'yep, almost done with the auth module.' },
-      { sender: 'ALEX', text: 'great, I found some interesting patterns in the middleware.' },
-      { sender: 'TK', text: 'sweet, show me then.' }
-    ],
-    status: 'FRESH',
-    created_at: '2 hrs ago',
-    visibility: 'PUBLIC',
-    likes: 12, dislikes: 1, caps: 45, smiles: 20, views: '1,200', watching: 56,
-    otherChats: {
-      left: [{ id: 1, username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000' }, { id: 12, username: 'Sam Rivera', handle: '@samrivera', avatar: 'SR', color: '#6B7280' }],
-      right: [{ id: 19, username: 'Jordan Blake', handle: '@jordanblake', avatar: 'JB', color: 'var(--accent-color)' }]
-    }
-  },
-  12: {
-    participants: [
-      { username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)', is_public: true },
-      { username: 'Sam Rivera', handle: '@samrivera', avatar: 'SR', color: '#6B7280', is_public: true }
-    ],
-    messages: [
-      { sender: 'ALEX', text: 'hey Sam, did you check the new design for the delivery map?' },
-      { sender: 'SR', text: 'just looking at it now. the orange route looks much cleaner.' },
-      { sender: 'ALEX', text: 'yeah, I think it helps with readability in the sun.' },
-      { sender: 'SR', text: 'definitely. we should apply this aesthetic to the rest of the app.' }
-    ],
-    status: 'ACTIVE',
-    created_at: '12 mins ago',
-    visibility: 'PUBLIC',
-    likes: 20, dislikes: 5, caps: 104, smiles: 12, views: '8,900', watching: 310,
-    otherChats: {
-      left: [{ id: 1, username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000' }, { id: 7, username: 'Taylor Kim', handle: '@taylorkim', avatar: 'TK', color: '#000' }],
-      right: [{ id: 4, username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6' }]
-    }
-  },
-  15: {
-    participants: [
-      { username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6', is_public: true },
-      { username: 'RogueOne', handle: '@rogueone', avatar: 'RO', color: 'var(--accent-color)', is_public: true }
-    ],
-    messages: [
-      { sender: 'ROGUE', text: 'is the staging server down?' },
-      { sender: 'ECHO', text: 'restarting the database, give it 2 mins' }
-    ],
-    status: 'ACTIVE',
-    created_at: '1 min ago',
-    visibility: 'PUBLIC',
-    likes: 1, dislikes: 0, caps: 3, smiles: 2, views: '32', watching: 8,
-    otherChats: {
-      left: [{ id: 4, username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000' }],
-      right: [{ id: 1, username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)' }]
-    }
-  },
-  19: {
-    participants: [
-      { username: 'NeonWraith', handle: '@neonwraith', avatar: 'NE', color: '#000', is_public: false },
-      { username: 'Jordan Blake', handle: '@jordanblake', avatar: 'JB', color: 'var(--accent-color)', is_public: true }
-    ],
-    messages: [
-      { sender: 'NEON', text: 'Jordan, the AI models are evolving way too fast.' },
-      { sender: 'JB', text: 'tell me about it. the new papers are coming out every hour.' },
-      { sender: 'NEON', text: 'I am taking a break from Arxiv, just following the summaries now.' },
-      { sender: 'JB', text: 'wise choice. let the dust settle first.' }
-    ],
-    status: 'HEATING UP',
-    created_at: 'just now',
-    visibility: 'PUBLIC',
-    likes: 22, dislikes: 3, caps: 87, smiles: 14, views: '6,210', watching: 201,
-    otherChats: {
-      left: [{ id: 1, username: 'Alex Chen', handle: '@alexchen', avatar: 'AC', color: 'var(--accent-color)' }, { id: 4, username: 'Casey Nguyen', handle: '@caseynguyen', avatar: 'CN', color: '#8B5CF6' }],
-      right: [{ id: 7, username: 'Taylor Kim', handle: '@taylorkim', avatar: 'TK', color: '#000' }]
-    }
-  }
-};
-
 const availableIds = [1, 7, 12, 15, 19];
 
 const NavigationArrows = ({ onNext, onPrev }) => (
@@ -597,7 +399,7 @@ const ProfileSidebar = ({ participant, otherChats = [], messageCount, currentUse
       }}>
         {participant.avatar}
       </div>
-      <div className="profile-name">{isMe ? 'YOU' : participant.username}</div>
+      <div className="profile-name">{isMe ? 'YOU' : participant.username}{participant.is_verified ? <span className="verified-badge" style={{ marginLeft: 6, color: '#0ea5a4' }}>✓</span> : null}</div>
       <div className="profile-handle">{participant.handle}</div>
       <div className="profile-badge" style={{ 
         borderColor: participant.is_public ? 'var(--accent-color)' : '#9CA3AF',
@@ -617,7 +419,7 @@ const ProfileSidebar = ({ participant, otherChats = [], messageCount, currentUse
         <Link key={i} to={`/chat/${chat.id}`} className="other-chat-item">
           <div className="other-chat-avatar" style={{ background: chat.color }}>{chat.avatar}</div>
           <div>
-            <div className="other-chat-name">{chat.username}</div>
+            <div className="other-chat-name">{chat.username}{chat.is_verified ? <span className="verified-badge" style={{ marginLeft: 6, color: '#0ea5a4' }}>✓</span> : null}</div>
             <div className="other-chat-handle">{chat.handle}</div>
           </div>
         </Link>
@@ -756,12 +558,6 @@ const ChatPage = () => {
   }, [id]);
 
   useEffect(() => {
-    const mock = mockChatData[id];
-    if (mock) {
-      setChatData(mock);
-      setMessages(mock.messages || []);
-    }
-
     const fetchMessages = async () => {
       try {
         const token = localStorage.getItem('access');
@@ -826,29 +622,9 @@ const ChatPage = () => {
         }
       } catch (error) {
         console.error("Error fetching chat data:", error);
-        // Fallback to mock data if API fails
-        const mock = mockChatData[id];
-        if (mock) {
-            setChatData(mock);
-            if (mock.messages) {
-                setMessages(mock.messages.map(m => ({
-                    sender: m.sender || m.sender_username || 'ANON',
-                    text: m.text
-                })));
-            }
-        } else {
-            // Handle complete failure
-            setChatData({ 
-                participants: [
-                    { username: 'ERROR', handle: '@error', avatar: 'ER', color: '#f00', is_public: true }, 
-                    { username: 'ERROR', handle: '@error', avatar: 'ER', color: '#f00', is_public: true }
-                ],
-                status: 'OFFLINE',
-                created_at: 'now',
-                likes: 0, dislikes: 0, caps: 0, smiles: 0, views: 0, watching: 0,
-                otherChats: { left: [], right: [] }
-            });
-        }
+        // Show an error state; never fabricate conversation content.
+        setChatData({ participants: [], status: 'UNAVAILABLE', created_at: '', likes: 0, dislikes: 0, caps: 0, smiles: 0, views: 0, watching: 0, user_reactions: [], otherChats: { left: [], right: [] } });
+        setMessages([]);
       }
     };
     fetchMessages();
@@ -1315,14 +1091,21 @@ const LoginPage = () => {
 const RegisterPage = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [password2, setPassword2] = useState('');
     const [email, setEmail] = useState('');
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
     const handleRegister = async (e) => {
         e.preventDefault();
+        if (password !== password2) {
+            setError('Passwords do not match');
+            return;
+        }
         try {
-            const response = await axios.post('/api/auth/register/', { username, password, email });
+            const response = await axios.post('/api/auth/register/', {
+                username, password, password2, email
+            });
             localStorage.setItem('access', response.data.tokens.access);
             localStorage.setItem('refresh', response.data.tokens.refresh);
             localStorage.setItem('user', JSON.stringify(response.data.user));
@@ -1391,6 +1174,16 @@ const RegisterPage = () => {
                             required
                         />
                     </div>
+                    <div className="input-group">
+                        <label>CONFIRM PASSWORD</label>
+                        <input
+                            type="password"
+                            value={password2}
+                            onChange={(e) => setPassword2(e.target.value)}
+                            placeholder="********"
+                            required
+                        />
+                    </div>
                     <button type="submit" className="auth-button">INITIALIZE IDENTITY</button>
                 </form>
                 <div className="auth-divider">OR</div>
@@ -1439,6 +1232,7 @@ const MessagesPage = () => {
     const [emojiSearchQuery, setEmojiSearchQuery] = useState('');
     const [onlineStatus, setOnlineStatus] = useState('ONLINE');
     const [clock, setClock] = useState(new Date());
+    const [showSettings, setShowSettings] = useState(false);
 
     useEffect(() => {
         const timer = setInterval(() => setClock(new Date()), 1000);
@@ -1717,6 +1511,7 @@ const MessagesPage = () => {
     };
 
     return (
+        <>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-color)' }}>
             <Header />
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -2004,6 +1799,7 @@ const MessagesPage = () => {
                 {/* Settings */}
                 <button
                     title="SETTINGS"
+                    onClick={() => setShowSettings(true)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', display: 'flex', alignItems: 'center', padding: '0.35rem' }}
                     onMouseEnter={e => e.currentTarget.style.color = '#fff'}
                     onMouseLeave={e => e.currentTarget.style.color = '#888'}
@@ -2023,6 +1819,8 @@ const MessagesPage = () => {
                 </button>
             </div>
         </div>
+        {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} onDeactivated={() => { localStorage.removeItem('user'); navigate('/login'); }} />}
+        </>
     );
 };
 

@@ -6,6 +6,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.db.models import Q, Count
+from django.db import IntegrityError
+from django.db.models import F
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from google.oauth2 import id_token
@@ -17,7 +20,7 @@ import json
 from .models import (
     Profile, Follow, Conversation, Message, MessageReaction,
     ConversationReaction, ChatVisibility, AnonymousProfile, Post,
-    MessageComment
+    MessageComment, Report, Block, MessagePoll, PollVote, SponsorshipRequest
 )
 from .serializers import (
     UserSerializer, ProfileSerializer, RegisterSerializer,
@@ -25,7 +28,37 @@ from .serializers import (
     ChatVisibilitySerializer, AnonymousProfileSerializer,
     ChatterProfileSerializer, PostSerializer, MessageReactionSerializer,
     MessageCommentSerializer
+    ,
+    SponsorshipRequestSerializer
 )
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
+
+def mutually_blocked_user_ids(user):
+    if not user or not user.is_authenticated:
+        return []
+    blocked = Block.objects.filter(blocker=user).values_list('blocked_id', flat=True)
+    blockers = Block.objects.filter(blocked=user).values_list('blocker_id', flat=True)
+    return set(blocked).union(blockers)
+
+
+def users_mutually_blocked(first, second):
+    return Block.objects.filter(Q(blocker=first, blocked=second) | Q(blocker=second, blocked=first)).exists()
+
+
+def any_block_between(user, others):
+    if not user or not user.is_authenticated:
+        return False
+    ids = others.values_list('id', flat=True)
+    return Block.objects.filter(Q(blocker=user, blocked_id__in=ids) | Q(blocked=user, blocker_id__in=ids)).exists()
+
+
+def visible_to_user(conversations, user):
+    blocked_ids = set()
+    for blocker_id, blocked_id in Block.objects.filter(Q(blocker=user) | Q(blocked=user)).values_list('blocker_id', 'blocked_id'):
+        blocked_ids.add(blocked_id if blocker_id == user.id else blocker_id)
+    return conversations.exclude(participants__id__in=blocked_ids).distinct()
 
 
 # ==================== Authentication Views ====================
@@ -147,13 +180,253 @@ def update_profile(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deactivate_account(request):
+    user = request.user
+    ChatVisibility.objects.filter(user=user, is_public=True).update(is_public=False)
+    user.is_active = False
+    user.save(update_fields=['is_active'])
+    return Response({'message': 'Account deactivated. Your public conversation visibility has been turned off.'})
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_profile(request, username):
     """Get a specific user's profile"""
     user = get_object_or_404(User, username=username)
+    if request.user.is_authenticated and users_mutually_blocked(request.user, user):
+        return Response({'error': 'Profile unavailable'}, status=status.HTTP_404_NOT_FOUND)
+    if not user.is_active:
+        return Response({'error': 'Profile unavailable'}, status=status.HTTP_404_NOT_FOUND)
     serializer = ProfileSerializer(user.profile)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_report(request, target_type, target_id):
+    if target_type == 'conversation':
+        target = get_object_or_404(Conversation, id=target_id, is_removed=False)
+        kwargs = {'conversation': target}
+    else:
+        target = get_object_or_404(Message, id=target_id, is_removed=False, conversation__is_removed=False)
+        kwargs = {'message': target}
+    reason = request.data.get('reason')
+    if reason not in dict(Report.REASONS):
+        return Response({'reason': 'Invalid report reason'}, status=status.HTTP_400_BAD_REQUEST)
+    report = Report.objects.create(reporter=request.user, reason=reason, detail=request.data.get('detail', '')[:4000], **kwargs)
+    return Response({'id': report.id, 'status': report.status}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def moderation_reports(request):
+    if not request.user.is_staff:
+        return Response({'error': 'Staff only'}, status=status.HTTP_403_FORBIDDEN)
+    reports = Report.objects.filter(status='PENDING').select_related('reporter', 'conversation', 'message').order_by('created_at')
+    return Response([{'id': r.id, 'reporter': r.reporter.username, 'target_type': 'message' if r.message_id else 'conversation', 'target_id': r.message_id or r.conversation_id, 'reason': r.reason, 'detail': r.detail, 'created_at': r.created_at} for r in reports])
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def moderate_report(request, report_id):
+    if not request.user.is_staff:
+        return Response({'error': 'Staff only'}, status=status.HTTP_403_FORBIDDEN)
+    report = get_object_or_404(Report, id=report_id)
+    action = request.data.get('action')
+    if action not in ('dismiss', 'remove_content', 'suspend_user'):
+        return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+    if action == 'dismiss':
+        report.status = 'DISMISSED'
+    elif action == 'remove_content':
+        if report.message_id:
+            report.message.is_removed = True
+            report.message.save(update_fields=['is_removed'])
+        else:
+            report.conversation.is_removed = True
+            report.conversation.save(update_fields=['is_removed'])
+        report.status = 'ACTIONED'
+    else:
+        target_user = report.message.sender if report.message_id else report.conversation.participants.exclude(id=report.reporter_id).first()
+        if not target_user:
+            return Response({'error': 'No account to suspend'}, status=status.HTTP_400_BAD_REQUEST)
+        target_user.is_active = False
+        target_user.save(update_fields=['is_active'])
+        report.status = 'ACTIONED'
+    report.reviewed_by = request.user
+    report.reviewed_at = timezone.now()
+    report.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+    return Response({'status': report.status})
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def manage_block(request, username):
+    blocked = get_object_or_404(User, username=username)
+    if blocked == request.user:
+        return Response({'error': 'Cannot block yourself'}, status=status.HTTP_400_BAD_REQUEST)
+    if request.method == 'POST':
+        Block.objects.get_or_create(blocker=request.user, blocked=blocked)
+        return Response({'blocked': username}, status=status.HTTP_201_CREATED)
+    Block.objects.filter(blocker=request.user, blocked=blocked).delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_blocks(request):
+    return Response(list(Block.objects.filter(blocker=request.user).select_related('blocked').values('blocked__username', 'created_at')))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def vote_on_poll(request, poll_id):
+    poll = get_object_or_404(MessagePoll, id=poll_id, message__is_removed=False, message__conversation__is_removed=False)
+    if not _can_access_message(request, poll.message):
+        return Response({'error': 'Poll unavailable'}, status=status.HTTP_403_FORBIDDEN)
+    option = request.data.get('option')
+    if option not in ('A', 'B'):
+        return Response({'error': 'Option must be A or B'}, status=status.HTTP_400_BAD_REQUEST)
+    if PollVote.objects.filter(poll=poll, user=request.user).exists():
+        return Response({'error': 'You have already voted'}, status=status.HTTP_409_CONFLICT)
+    try:
+        PollVote.objects.create(poll=poll, user=request.user, selected_option=option)
+    except IntegrityError:
+        return Response({'error': 'You have already voted'}, status=status.HTTP_409_CONFLICT)
+    field = 'votes_a' if option == 'A' else 'votes_b'
+    MessagePoll.objects.filter(id=poll.id).update(**{field: F(field) + 1})
+    poll.refresh_from_db()
+    return Response({'votes_a': poll.votes_a, 'votes_b': poll.votes_b}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def vote_on_sponsorship(request, conversation_id, sponsorship_id):
+    conversation = get_object_or_404(Conversation, id=conversation_id, is_removed=False)
+    sponsorship = get_object_or_404(SponsorshipRequest, id=sponsorship_id, conversation=conversation)
+    if not conversation.participants.filter(id=request.user.id).exists():
+        return Response({'error': 'Participants only'}, status=status.HTTP_403_FORBIDDEN)
+    if sponsorship.user1_id == request.user.id:
+        sponsorship.user1_accepted = request.data.get('accepted') is True
+    elif sponsorship.user2_id == request.user.id:
+        sponsorship.user2_accepted = request.data.get('accepted') is True
+    else:
+        return Response({'error': 'Not a sponsorship participant'}, status=status.HTTP_403_FORBIDDEN)
+    sponsorship.save(update_fields=['user1_accepted', 'user2_accepted'])
+    return Response({'user1_accepted': sponsorship.user1_accepted, 'user2_accepted': sponsorship.user2_accepted, 'active': sponsorship.user1_accepted and sponsorship.user2_accepted})
+
+
+# ----------------- Moderation: Sponsorship creation & listing -----------------
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_sponsorship_request(request):
+    if not request.user.is_staff:
+        return Response({'error': 'Staff only'}, status=status.HTTP_403_FORBIDDEN)
+    conv_id = request.data.get('conversation_id')
+    sponsor_name = request.data.get('sponsor_name')
+    sponsor_text = request.data.get('sponsor_text')
+    if not conv_id or not sponsor_name:
+        return Response({'error': 'conversation_id and sponsor_name required'}, status=status.HTTP_400_BAD_REQUEST)
+    conversation = get_object_or_404(Conversation, id=conv_id, is_removed=False)
+    participants = list(conversation.participants.all()[:2])
+    if len(participants) != 2:
+        return Response({'error': 'Conversation must have exactly 2 participants for sponsorships'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check for existing pending sponsorships
+    existing = SponsorshipRequest.objects.filter(conversation=conversation).exclude(
+        Q(user1_accepted=True, user2_accepted=True) | Q(user1_accepted=False) | Q(user2_accepted=False)
+    ).exists()
+    if existing:
+        return Response({'error': 'A pending sponsorship already exists for this conversation'}, status=status.HTTP_400_BAD_REQUEST)
+
+    sr = SponsorshipRequest.objects.create(
+        conversation=conversation,
+        sponsor_name=sponsor_name,
+        sponsor_text=sponsor_text or '',
+        user1=participants[0],
+        user2=participants[1]
+    )
+
+    # Broadcast via channels to conversation group
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'chat_{conversation.id}',
+            {
+                'type': 'sponsorship_update',
+                'sponsorship': SponsorshipRequestSerializer(sr).data,
+                'chatId': conversation.id
+            }
+        )
+    except Exception:
+        pass
+
+    return Response(SponsorshipRequestSerializer(sr).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_sponsorship_requests(request):
+    if not request.user.is_staff:
+        return Response({'error': 'Staff only'}, status=status.HTTP_403_FORBIDDEN)
+    conversation_id = request.query_params.get('conversation_id')
+    qs = SponsorshipRequest.objects.all().order_by('-created_at')
+    if conversation_id:
+        qs = qs.filter(conversation_id=conversation_id)
+    data = []
+    for s in qs:
+        d = SponsorshipRequestSerializer(s).data
+        d['status'] = s.status
+        data.append(d)
+    return Response(data)
+
+
+# ----------------- Verification endpoints -----------------
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def apply_verification(request):
+    profile = request.user.profile
+    if profile.verification_status == 'PENDING' or profile.verification_status == 'VERIFIED':
+        return Response({'error': 'Already pending or verified'}, status=status.HTTP_400_BAD_REQUEST)
+    profile.verification_text = request.data.get('verification_text', '')[:2000]
+    profile.verification_url = request.data.get('verification_url', '')[:1000]
+    profile.verification_status = 'PENDING'
+    profile.save(update_fields=['verification_text', 'verification_url', 'verification_status'])
+    return Response({'status': 'PENDING'}, status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def moderation_verification_requests(request):
+    if not request.user.is_staff:
+        return Response({'error': 'Staff only'}, status=status.HTTP_403_FORBIDDEN)
+    pending = Profile.objects.filter(verification_status='PENDING').select_related('user')
+    data = []
+    for p in pending:
+        data.append({'profile_id': p.id, 'user_id': p.user_id, 'username': p.user.username, 'verification_text': p.verification_text, 'verification_url': p.verification_url, 'applied_at': p.updated_at})
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def review_verification_request(request, profile_id):
+    if not request.user.is_staff:
+        return Response({'error': 'Staff only'}, status=status.HTTP_403_FORBIDDEN)
+    profile = get_object_or_404(Profile, id=profile_id)
+    if profile.verification_status != 'PENDING':
+        return Response({'error': 'Not pending'}, status=status.HTTP_400_BAD_REQUEST)
+    action = request.data.get('action')
+    if action not in ('approve', 'reject'):
+        return Response({'error': "action must be 'approve' or 'reject'"}, status=status.HTTP_400_BAD_REQUEST)
+    if action == 'approve':
+        profile.verification_status = 'VERIFIED'
+    else:
+        profile.verification_status = 'REJECTED'
+    profile.verification_reviewed_by = request.user
+    profile.verification_reviewed_at = timezone.now()
+    profile.save(update_fields=['verification_status', 'verification_reviewed_by', 'verification_reviewed_at'])
+    return Response({'status': profile.verification_status})
 
 
 # ==================== Follow Views ====================
@@ -251,16 +524,18 @@ def get_recommended_chats(request):
     page_size = int(request.GET.get('page_size', 20))
 
     # ── STAGE 1: Candidate Retrieval ─────────────────────────────────────────
-    public_visibilities = ChatVisibility.objects.filter(is_public=True)
+    public_visibilities = ChatVisibility.objects.filter(is_public=True, conversation__is_removed=False, user__is_active=True)
     conversation_ids = public_visibilities.values_list('conversation_id', flat=True).distinct()
 
     # Annotate with message count and latest message time for efficiency
     conversations = Conversation.objects.filter(
         id__in=conversation_ids
     ).annotate(
-        total_messages=Count('messages'),
+        total_messages=Count('messages', filter=Q(messages__is_removed=False)),
         # Reaction sum
     ).prefetch_related('participants', 'messages')
+    if request.user.is_authenticated:
+        conversations = visible_to_user(conversations, request.user)
 
     # ── Social graph: who does the viewer follow? ────────────────────────────
     followed_user_ids = set()
@@ -441,7 +716,7 @@ def get_recommended_chats(request):
                         'can_follow': False
                     })
 
-            messages = Message.objects.filter(conversation=conv).order_by('timestamp')
+            messages = Message.objects.filter(conversation=conv, is_removed=False).order_by('timestamp')
             serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
 
             for msg in serialized_messages:
@@ -479,7 +754,7 @@ def get_recommended_chats(request):
 def get_following_chats(request):
     """Get public chats from users you follow"""
     # Get users current user is following
-    following_ids = Follow.objects.filter(follower=request.user).values_list('following_id', flat=True)
+    following_ids = Follow.objects.filter(follower=request.user, following__is_active=True).values_list('following_id', flat=True)
     
     # Get public conversations involving these users
     public_visibilities = ChatVisibility.objects.filter(
@@ -489,8 +764,9 @@ def get_following_chats(request):
     conversation_ids = public_visibilities.values_list('conversation_id', flat=True).distinct()
     
     conversations = Conversation.objects.filter(
-        id__in=conversation_ids
-    ).order_by('-updated_at')[:20]
+        id__in=conversation_ids, is_removed=False
+    ).order_by('-updated_at')
+    conversations = visible_to_user(conversations, request.user)[:20]
     
     result = []
     for conv in conversations:
@@ -532,7 +808,7 @@ def get_following_chats(request):
                     'can_follow': False
                 })
         
-        messages = Message.objects.filter(conversation=conv).order_by('timestamp')
+        messages = Message.objects.filter(conversation=conv, is_removed=False).order_by('timestamp')
         serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
         
         for msg in serialized_messages:
@@ -562,8 +838,24 @@ def search_users(request):
     if not query:
         return Response([])
     
-    users = User.objects.filter(username__icontains=query)[:10]
+    users = User.objects.filter(username__icontains=query, is_active=True)
+    if request.user.is_authenticated:
+        users = users.exclude(id__in=mutually_blocked_user_ids(request.user))
+    users = users[:10]
     return Response(UserSerializer(users, many=True).data)
+
+
+def _can_access_message(request, message):
+    """Participants and readers of public conversations may access a message."""
+    if message.is_removed or message.conversation.is_removed:
+        return False
+    if request.user.is_authenticated and any_block_between(request.user, message.conversation.participants.all()):
+        return False
+    if message.conversation.participants.filter(id=request.user.id).exists():
+        return True
+    return ChatVisibility.objects.filter(
+        conversation=message.conversation, is_public=True
+    ).exists()
 
 
 # ==================== Conversation Views ====================
@@ -581,10 +873,12 @@ def get_user_conversations(request):
 @permission_classes([AllowAny])
 def get_conversation(request, conversation_id):
     """Get a specific conversation with messages"""
-    conversation = get_object_or_404(Conversation, id=conversation_id)
+    conversation = get_object_or_404(Conversation, id=conversation_id, is_removed=False)
     
     is_authenticated = request.user.is_authenticated
     is_participant = is_authenticated and conversation.participants.filter(id=request.user.id).exists()
+    if is_authenticated and any_block_between(request.user, conversation.participants.all()):
+        return Response({'error': 'Conversation unavailable'}, status=status.HTTP_404_NOT_FOUND)
     
     if not is_participant:
         # If any user made it public, anyone can view it
@@ -594,7 +888,7 @@ def get_conversation(request, conversation_id):
     # Increment view count for the conversation
     conversation.increment_view()
     
-    messages = Message.objects.filter(conversation=conversation).order_by('timestamp')
+    messages = Message.objects.filter(conversation=conversation, is_removed=False).order_by('timestamp')
     serialized_conv = ConversationSerializer(conversation, context={'request': request}).data
     serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
     
@@ -613,8 +907,12 @@ def get_conversation(request, conversation_id):
         participant_other_chats = []
         others = Conversation.objects.filter(
             visibilities__user=participant,
-            visibilities__is_public=True
-        ).exclude(id=conversation.id).distinct().order_by('-updated_at')[:2]
+            visibilities__is_public=True,
+            is_removed=False
+        ).exclude(id=conversation.id).distinct().order_by('-updated_at')
+        if request.user.is_authenticated:
+            others = visible_to_user(others, request.user)
+        others = others[:2]
         
         for oc in others:
             # Find the OTHER person in that conversation
@@ -726,7 +1024,7 @@ def create_conversation(request):
     conversation.participants.add(request.user, other_user)
     
     # Create visibility settings (default private)
-    ChatVisibility.objects.create(user=request.user, conversation=conversation, is_public=False)
+    ChatVisibility.objects.create(user=request.user, conversation=conversation, is_public=request.user.profile.default_conversations_public)
     ChatVisibility.objects.create(user=other_user, conversation=conversation, is_public=False)
     
     return Response(ConversationSerializer(conversation, context={'request': request}).data, status=status.HTTP_201_CREATED)
@@ -853,6 +1151,8 @@ def send_message(request):
 def react_to_message(request, message_id):
     """Add, update, or toggle off a reaction to a message"""
     message = get_object_or_404(Message, id=message_id)
+    if not _can_access_message(request, message):
+        return Response({'error': 'Not a participant or public'}, status=status.HTTP_403_FORBIDDEN)
     reaction_type = request.data.get('reaction_type')
     
     if reaction_type not in ['like', 'dislike', 'cap', 'smile']:
@@ -943,6 +1243,8 @@ def mark_messages_read(request, conversation_id):
 def remove_reaction(request, message_id):
     """Remove reaction from a message"""
     message = get_object_or_404(Message, id=message_id)
+    if not _can_access_message(request, message):
+        return Response({'error': 'Not a participant or public'}, status=status.HTTP_403_FORBIDDEN)
     
     try:
         reaction = MessageReaction.objects.get(message=message, user=request.user)
@@ -969,6 +1271,8 @@ def remove_reaction(request, message_id):
 def increment_view(request, message_id):
     """Increment view count for a message"""
     message = get_object_or_404(Message, id=message_id)
+    if not _can_access_message(request, message):
+        return Response({'error': 'Not a participant or public'}, status=status.HTTP_403_FORBIDDEN)
     message.increment_view()
     return Response({'views': message.views})
 
@@ -978,6 +1282,8 @@ def increment_view(request, message_id):
 def add_message_comment(request, message_id):
     """Add an inline comment to a specific message"""
     message = get_object_or_404(Message, id=message_id)
+    if not _can_access_message(request, message):
+        return Response({'error': 'Not a participant or public'}, status=status.HTTP_403_FORBIDDEN)
     text = request.data.get('text')
     
     if not text:

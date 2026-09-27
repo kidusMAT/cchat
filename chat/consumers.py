@@ -75,9 +75,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         from .models import Message, MessageReaction
 
         try:
-            message = Message.objects.get(id=message_id)
+            message = Message.objects.select_related('conversation').get(id=message_id)
             user = User.objects.get(id=user_id)
         except (Message.DoesNotExist, User.DoesNotExist):
+            return None
+
+        if not message.conversation.participants.filter(id=user.id).exists():
             return None
 
         valid_types = ['like', 'dislike', 'cap', 'smile']
@@ -918,4 +921,3 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'sponsorship': event.get('sponsorship'),
             'chatId': event.get('chatId')
         }))
-
