@@ -150,6 +150,31 @@ class CChatAPITestCase(TestCase):
         self.assertEqual([u['username'] for u in response.data], ['alice'])
         self.assertNotIn('password', response.data[0])
 
+    def test_public_profile_conversations_exclude_private_and_mutually_blocked(self):
+        ChatVisibility.objects.filter(conversation=self.conversation, user=self.alice).update(is_public=True)
+        private = Conversation.objects.create()
+        private.participants.add(self.alice, self.eve)
+        ChatVisibility.objects.create(user=self.alice, conversation=private, is_public=False)
+        ChatVisibility.objects.create(user=self.eve, conversation=private, is_public=True)
+        self.assertEqual(self.client.get('/api/profile/alice/conversations/').status_code, 200)
+        self.assertEqual([item['id'] for item in self.client.get('/api/profile/alice/conversations/').data], [self.conversation.id])
+        self.authenticate(self.eve)
+        self.client.post('/api/block/alice/')
+        self.assertEqual(self.client.get('/api/profile/alice/conversations/').data, [])
+
+    def test_conversation_search_never_returns_private_content(self):
+        ChatVisibility.objects.filter(conversation=self.conversation, user=self.alice).update(is_public=True)
+        Message.objects.create(conversation=self.conversation, sender=self.alice, text='public keyword')
+        private = Conversation.objects.create()
+        private.participants.add(self.alice, self.eve)
+        ChatVisibility.objects.create(user=self.alice, conversation=private, is_public=False)
+        ChatVisibility.objects.create(user=self.eve, conversation=private, is_public=False)
+        Message.objects.create(conversation=private, sender=self.alice, text='secret keyword')
+        public = self.client.get('/api/search/conversations/?q=keyword')
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual([item['conversation_id'] for item in public.data], [self.conversation.id])
+        self.assertNotIn('secret keyword', str(public.data))
+
     def test_poll_vote_is_one_per_user(self):
         poll_message = Message.objects.create(conversation=self.conversation, sender=self.alice, text='poll', message_type='poll')
         poll = MessagePoll.objects.create(message=poll_message, question='?', option_a='yes', option_b='no')

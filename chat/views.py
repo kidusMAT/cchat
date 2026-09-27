@@ -845,6 +845,103 @@ def search_users(request):
     return Response(UserSerializer(users, many=True).data)
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_profile_conversations(request, username):
+    """Return the public conversations owned by a user's visibility settings."""
+    profile_user = get_object_or_404(User, username=username, is_active=True)
+    conversations = Conversation.objects.filter(
+        participants=profile_user,
+        visibilities__user=profile_user,
+        visibilities__is_public=True,
+        is_removed=False,
+    ).distinct().order_by('-updated_at')
+    if request.user.is_authenticated:
+        conversations = visible_to_user(conversations, request.user)
+
+    result = []
+    for conversation in conversations:
+        other = conversation.participants.exclude(id=profile_user.id).first()
+        if not other:
+            continue
+        other_public = conversation.is_public_for_user(other)
+        other_data = UserSerializer(other).data if other_public else {
+            'username': 'Anonymous', 'is_anonymous': True, 'is_public': False
+        }
+        result.append({
+            'id': conversation.id,
+            'other_participant': other_data,
+            'last_message': MessageSerializer(
+                conversation.messages.filter(is_removed=False).order_by('-timestamp').first(),
+                context={'request': request},
+            ).data if conversation.messages.filter(is_removed=False).exists() else None,
+            'updated_at': conversation.updated_at,
+        })
+    return Response(result)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def search_conversations(request):
+    """Search message text and public participant names in public rooms."""
+    query = request.GET.get('q', '').strip()
+    if not query:
+        return Response([])
+
+    public_ids = ChatVisibility.objects.filter(
+        is_public=True,
+        user__is_active=True,
+        conversation__is_removed=False,
+    ).values('conversation_id')
+    conversations = Conversation.objects.filter(
+        id__in=public_ids,
+        is_removed=False,
+    ).filter(
+        Q(messages__text__icontains=query, messages__is_removed=False) |
+        Q(participants__username__icontains=query)
+    ).distinct().order_by('-updated_at')
+    if request.user.is_authenticated:
+        conversations = visible_to_user(conversations, request.user)
+
+    result = []
+    for conversation in conversations[:30]:
+        participants = []
+        display_usernames = {}
+        for participant in conversation.participants.all().order_by('id'):
+            if conversation.is_public_for_user(participant):
+                display_usernames[participant.username] = participant.username
+                participants.append({
+                    'id': participant.id, 'username': participant.username,
+                    'is_public': True, 'is_anonymous': False,
+                })
+            else:
+                anonymous = AnonymousProfile.get_or_create_for_user(conversation, participant)
+                display_usernames[participant.username] = anonymous.fake_username
+                participants.append({
+                    'id': participant.id, 'username': anonymous.fake_username,
+                    'is_public': False, 'is_anonymous': True,
+                })
+        messages = list(Message.objects.filter(
+            conversation=conversation, is_removed=False
+        ).order_by('timestamp'))
+        serialized_messages = MessageSerializer(messages, many=True, context={'request': request}).data
+        for message in serialized_messages:
+            if message.get('sender_username') in display_usernames:
+                message['sender_username'] = display_usernames[message['sender_username']]
+        result.append({
+            'conversation_id': conversation.id,
+            'participants': participants,
+            'messages': serialized_messages[-4:],
+            'likes': conversation.likes,
+            'dislikes': conversation.dislikes,
+            'caps': conversation.caps,
+            'smiles': conversation.smiles,
+            'views': conversation.views,
+            'updated_at': conversation.updated_at,
+        })
+    return Response(result)
+
+
 def _can_access_message(request, message):
     """Participants and readers of public conversations may access a message."""
     if message.is_removed or message.conversation.is_removed:

@@ -26,6 +26,7 @@ urlpatterns = [
     path('profile/update/', views.update_profile, name='update_profile'),
     path('account/deactivate/', views.deactivate_account, name='deactivate_account'),
     path('profile/<str:username>/', views.get_user_profile, name='get_user_profile'),
+    path('profile/<str:username>/conversations/', views.get_profile_conversations, name='get_profile_conversations'),
 
     # Verification
     path('verification/apply/', views.apply_verification, name='apply_verification'),
@@ -41,6 +42,7 @@ urlpatterns = [
     path('chats/recommended/', views.get_recommended_chats, name='recommended_chats'),
     path('chats/following/', views.get_following_chats, name='following_chats'),
     path('search/users/', views.search_users, name='search_users'),
+    path('search/conversations/', views.search_conversations, name='search_conversations'),
     
     # Conversations
     path('conversations/', views.get_user_conversations, name='user_conversations'),
