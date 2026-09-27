@@ -1,0 +1,17 @@
+:root {
+  --color-paper: #fbfbf8;
+  --color-surface: #ffffff;
+  --color-ink: #080808;
+  --color-muted: #686866;
+  --color-accent: #ff2d55;
+  --font-display: 'Space Grotesk', Arial, sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 48px;
+  --space-6: 64px;
+  --space-7: 96px;
+  --shadow-hard: 5px 5px 0 #080808;
+}
