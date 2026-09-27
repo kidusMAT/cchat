@@ -57,6 +57,13 @@ class CChatAPITestCase(TestCase):
         response = self.client.get(f'/api/conversations/{self.conversation.id}/')
         self.assertEqual(response.status_code, 403)
 
+    def test_authenticated_nonparticipant_cannot_read_private_conversation_detail(self):
+        """The detail endpoint must not expose a private room by guessed id."""
+        self.authenticate(self.eve)
+        response = self.client.get(f'/api/conversations/{self.conversation.pk}/')
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn('messages', response.data)
+
     def test_public_conversation_masks_the_private_side(self):
         ChatVisibility.objects.filter(conversation=self.conversation, user=self.alice).update(is_public=True)
         self.authenticate(self.eve)
