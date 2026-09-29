@@ -113,6 +113,17 @@ class Conversation(models.Model):
         self.save(update_fields=['views'])
 
 
+class ConversationBookmark(models.Model):
+    """A user's private saved rooms."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='conversation_bookmarks')
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='bookmarks')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'conversation'], name='unique_conversation_bookmark')]
+        ordering = ['-created_at']
+
+
 class ConversationReaction(models.Model):
     """Track individual user reactions to conversations"""
     REACTION_CHOICES = [

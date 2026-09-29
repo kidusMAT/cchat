@@ -178,19 +178,24 @@ class ConversationSerializer(serializers.ModelSerializer):
     user_reactions = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     sponsorships = serializers.SerializerMethodField()
+    is_bookmarked = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
         fields = [
             'id', 'last_message', 'is_public', 
             'other_participant', 'likes', 'dislikes', 'caps', 
-            'smiles', 'views', 'user_reactions', 'created_at', 'updated_at',
+            'smiles', 'views', 'user_reactions', 'is_bookmarked', 'created_at', 'updated_at',
             'status', 'sponsorships'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_sponsorships(self, obj):
         return SponsorshipRequestSerializer(obj.sponsorships.all(), many=True).data
+
+    def get_is_bookmarked(self, obj):
+        request = self.context.get('request')
+        return bool(request and request.user.is_authenticated and obj.bookmarks.filter(user=request.user).exists())
 
     def get_is_public(self, obj):
         """Check if conversation is public for current user or anyone"""

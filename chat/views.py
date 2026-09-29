@@ -20,7 +20,7 @@ import json
 from .models import (
     Profile, Follow, Conversation, Message, MessageReaction,
     ConversationReaction, ChatVisibility, AnonymousProfile, Post,
-    MessageComment, Report, Block, MessagePoll, PollVote, SponsorshipRequest
+    MessageComment, Report, Block, MessagePoll, PollVote, SponsorshipRequest, ConversationBookmark
 )
 from .serializers import (
     UserSerializer, ProfileSerializer, RegisterSerializer,
@@ -1211,6 +1211,16 @@ def react_to_conversation(request, conversation_id):
     conversation.save()
     
     return Response(ConversationSerializer(conversation, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def toggle_bookmark(request, conversation_id):
+    conversation = get_object_or_404(Conversation, id=conversation_id, is_removed=False)
+    bookmark, created = ConversationBookmark.objects.get_or_create(user=request.user, conversation=conversation)
+    if not created:
+        bookmark.delete()
+    return Response({'is_bookmarked': created})
 
 
 # ==================== Message Views ====================
