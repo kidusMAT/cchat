@@ -10,9 +10,10 @@ from .models import (
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for User model"""
     is_verified = serializers.SerializerMethodField()
+    is_staff = serializers.BooleanField(read_only=True)
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_verified']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_verified', 'is_staff']
         read_only_fields = ['id']
 
     def get_is_verified(self, obj):
@@ -26,11 +27,12 @@ class ProfileSerializer(serializers.ModelSerializer):
     """Serializer for Profile model"""
     username = serializers.CharField(source='user.username', read_only=True)
     avatar_url = serializers.SerializerMethodField()
+    is_staff = serializers.BooleanField(source='user.is_staff', read_only=True)
     
     class Meta:
         model = Profile
         fields = [
-            'id', 'username', 'bio', 'avatar', 'avatar_url', 'rank',
+            'id', 'username', 'is_staff', 'bio', 'avatar', 'avatar_url', 'rank',
             'followers_count', 'following_count', 'posts_count',
             'default_conversations_public',
             'verification_status', 'verification_text', 'verification_url',

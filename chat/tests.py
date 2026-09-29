@@ -100,6 +100,19 @@ class CChatAPITestCase(TestCase):
         self.assertFalse(ChatVisibility.objects.get(user=self.alice, conversation_id=created.data['id']).is_public)
         self.assertTrue(Conversation.objects.filter(id=created.data['id']).exists())
 
+    def test_create_conversation_does_not_reuse_removed_conversation(self):
+        removed = Conversation.objects.create(is_removed=True)
+        removed.participants.add(self.alice, self.eve)
+        ChatVisibility.objects.create(user=self.alice, conversation=removed)
+        ChatVisibility.objects.create(user=self.eve, conversation=removed)
+
+        self.authenticate(self.alice)
+        response = self.client.post('/api/conversations/create/', {'username': 'eve'}, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotEqual(response.data['id'], removed.id)
+        self.assertFalse(Conversation.objects.get(id=response.data['id']).is_removed)
+
     def test_message_lifecycle_and_participant_permissions(self):
         self.authenticate(self.eve)
         self.assertEqual(self.client.post('/api/messages/send/', {'conversation_id': self.conversation.id, 'text': 'intrusion'}, format='json').status_code, 403)

@@ -1108,7 +1108,7 @@ def create_conversation(request):
     
     # Check if conversation already exists
     existing = Conversation.objects.filter(
-        participants=request.user
+        participants=request.user, is_removed=False
     ).filter(
         participants=other_user
     ).first()
