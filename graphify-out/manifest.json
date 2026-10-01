@@ -1,0 +1,236 @@
+{
+  ".opencode/opencode.json": {
+    "mtime": 1790863138.4349031,
+    "seen": 1790863223.0899117,
+    "ast_hash": "abcc8b9dcd80bca5f9dde6d9f0c3ae79",
+    "semantic_hash": "abcc8b9dcd80bca5f9dde6d9f0c3ae79"
+  },
+  ".opencode/plugins/graphify.js": {
+    "mtime": 1790863138.434169,
+    "seen": 1790863223.0899515,
+    "ast_hash": "3ea725724bc8ebe483c9f13d6aa1124f",
+    "semantic_hash": "3ea725724bc8ebe483c9f13d6aa1124f"
+  },
+  "cchat/__init__.py": {
+    "mtime": 1790855358.1959567,
+    "seen": 1790863223.0899682,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "cchat/asgi.py": {
+    "mtime": 1790855358.1968448,
+    "seen": 1790863223.089981,
+    "ast_hash": "7e2e7d7a8020556c4d8f5589fc68cc5e",
+    "semantic_hash": "7e2e7d7a8020556c4d8f5589fc68cc5e"
+  },
+  "cchat/settings.py": {
+    "mtime": 1790855438.4228203,
+    "seen": 1790863223.0899942,
+    "ast_hash": "fa085ae1a0c769be6ccbdd0ce7f66de1",
+    "semantic_hash": "fa085ae1a0c769be6ccbdd0ce7f66de1"
+  },
+  "cchat/urls.py": {
+    "mtime": 1790855358.1969566,
+    "seen": 1790863223.090007,
+    "ast_hash": "cda9df554c29e6e348116fecfe829845",
+    "semantic_hash": "cda9df554c29e6e348116fecfe829845"
+  },
+  "cchat/wsgi.py": {
+    "mtime": 1790855358.1969566,
+    "seen": 1790863223.0900214,
+    "ast_hash": "79d5dacac9bf80f22df3183432a109fd",
+    "semantic_hash": "79d5dacac9bf80f22df3183432a109fd"
+  },
+  "chat/__init__.py": {
+    "mtime": 1790855358.1969566,
+    "seen": 1790863223.0900345,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "chat/admin.py": {
+    "mtime": 1790855438.4238203,
+    "seen": 1790863223.090047,
+    "ast_hash": "c715929cbcfb5d01c8f4b05242b31ff6",
+    "semantic_hash": "c715929cbcfb5d01c8f4b05242b31ff6"
+  },
+  "chat/apps.py": {
+    "mtime": 1790855358.197901,
+    "seen": 1790863223.0900598,
+    "ast_hash": "734f01af95af7af75b138200791aef95",
+    "semantic_hash": "734f01af95af7af75b138200791aef95"
+  },
+  "chat/consumers.py": {
+    "mtime": 1790855438.4238203,
+    "seen": 1790863223.0900724,
+    "ast_hash": "55d4eef33ffa2427f34d44bd79f8430c",
+    "semantic_hash": "55d4eef33ffa2427f34d44bd79f8430c"
+  },
+  "chat/middleware.py": {
+    "mtime": 1790855358.1979566,
+    "seen": 1790863223.0900865,
+    "ast_hash": "57cb0d77fcb6f3dc0f6fc9ab0a59d70c",
+    "semantic_hash": "57cb0d77fcb6f3dc0f6fc9ab0a59d70c"
+  },
+  "chat/migrations/0001_initial.py": {
+    "mtime": 1790855358.1979566,
+    "seen": 1790863223.0900996,
+    "ast_hash": "21f4e11fe1addbb8e4dc2ace204ac420",
+    "semantic_hash": "21f4e11fe1addbb8e4dc2ace204ac420"
+  },
+  "chat/migrations/0002_message_views_count.py": {
+    "mtime": 1790855358.1992354,
+    "seen": 1790863223.0901122,
+    "ast_hash": "eca8f73512e47eb73eefe4c701869481",
+    "semantic_hash": "eca8f73512e47eb73eefe4c701869481"
+  },
+  "chat/migrations/0003_alter_message_options_remove_message_comments_count_and_more.py": {
+    "mtime": 1790855358.1992354,
+    "seen": 1790863223.0901253,
+    "ast_hash": "6bbf96d6599f1b68c76289d120f85510",
+    "semantic_hash": "6bbf96d6599f1b68c76289d120f85510"
+  },
+  "chat/migrations/0004_conversation_caps_conversation_dislikes_and_more.py": {
+    "mtime": 1790855358.1992354,
+    "seen": 1790863223.0901384,
+    "ast_hash": "d6d8ae5536e7bdb051f63f94801581b5",
+    "semantic_hash": "d6d8ae5536e7bdb051f63f94801581b5"
+  },
+  "chat/migrations/0005_message_smiles_alter_messagereaction_reaction_type.py": {
+    "mtime": 1790855358.1992354,
+    "seen": 1790863223.0901513,
+    "ast_hash": "5bfc88f954b75c5cb799138788b9fd3f",
+    "semantic_hash": "5bfc88f954b75c5cb799138788b9fd3f"
+  },
+  "chat/migrations/0006_messagecomment_parent.py": {
+    "mtime": 1790855358.1992354,
+    "seen": 1790863223.090164,
+    "ast_hash": "ced4603c05ac568aab65ef0de52f0a53",
+    "semantic_hash": "ced4603c05ac568aab65ef0de52f0a53"
+  },
+  "chat/migrations/0007_message_is_edited_messagecomment_is_edited.py": {
+    "mtime": 1790855358.1992354,
+    "seen": 1790863223.0901768,
+    "ast_hash": "55d168c45b69704161750a2e8cb0c7bc",
+    "semantic_hash": "55d168c45b69704161750a2e8cb0c7bc"
+  },
+  "chat/migrations/0008_alter_conversationreaction_options_and_more.py": {
+    "mtime": 1790855358.1999562,
+    "seen": 1790863223.0901895,
+    "ast_hash": "cc8dca26fbfc3febed6a89815b21177f",
+    "semantic_hash": "cc8dca26fbfc3febed6a89815b21177f"
+  },
+  "chat/migrations/0009_conversation_is_removed_message_is_removed_and_more.py": {
+    "mtime": 1790855438.4248202,
+    "seen": 1790863223.0902023,
+    "ast_hash": "fa9ca2a8d10e497ed2b25b75d69aff98",
+    "semantic_hash": "fa9ca2a8d10e497ed2b25b75d69aff98"
+  },
+  "chat/migrations/0010_profile_verification_reviewed_at_and_more.py": {
+    "mtime": 1790855438.4248202,
+    "seen": 1790863223.0902152,
+    "ast_hash": "22d43313254123b9aa3488985db24520",
+    "semantic_hash": "22d43313254123b9aa3488985db24520"
+  },
+  "chat/migrations/0011_conversationbookmark.py": {
+    "mtime": 1790855438.4248202,
+    "seen": 1790863223.0902297,
+    "ast_hash": "d923588fc55d9191ad731a27eacabba1",
+    "semantic_hash": "d923588fc55d9191ad731a27eacabba1"
+  },
+  "chat/migrations/__init__.py": {
+    "mtime": 1790855358.1999562,
+    "seen": 1790863223.0902426,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "chat/models.py": {
+    "mtime": 1790855438.4248202,
+    "seen": 1790863223.0902553,
+    "ast_hash": "f1c4e0ef8ce2772dfdf7f6d4435a86d2",
+    "semantic_hash": "f1c4e0ef8ce2772dfdf7f6d4435a86d2"
+  },
+  "chat/routing.py": {
+    "mtime": 1790855358.1999562,
+    "seen": 1790863223.090268,
+    "ast_hash": "17de0067c16482fe2a11afd59e651069",
+    "semantic_hash": "17de0067c16482fe2a11afd59e651069"
+  },
+  "chat/serializers.py": {
+    "mtime": 1790855438.4258204,
+    "seen": 1790863223.0902808,
+    "ast_hash": "c2c09a80b39b20adc33c8a5045b6ef05",
+    "semantic_hash": "c2c09a80b39b20adc33c8a5045b6ef05"
+  },
+  "chat/tests.py": {
+    "mtime": 1790855438.4258204,
+    "seen": 1790863223.0902936,
+    "ast_hash": "5688bec6bbfde69748825abd1fd41773",
+    "semantic_hash": "5688bec6bbfde69748825abd1fd41773"
+  },
+  "chat/tests_extra.py": {
+    "mtime": 1790855438.4258204,
+    "seen": 1790863223.0903068,
+    "ast_hash": "877c89bc593eb0326332aa41a020ba1c",
+    "semantic_hash": "877c89bc593eb0326332aa41a020ba1c"
+  },
+  "chat/urls.py": {
+    "mtime": 1790855438.4268203,
+    "seen": 1790863223.0903194,
+    "ast_hash": "bd251638f59bae1a08c7a981bc1a0471",
+    "semantic_hash": "bd251638f59bae1a08c7a981bc1a0471"
+  },
+  "chat/views.py": {
+    "mtime": 1790855438.4278202,
+    "seen": 1790863223.0903325,
+    "ast_hash": "689f797ab3ec1d1aa15a8c2da1364c3b",
+    "semantic_hash": "689f797ab3ec1d1aa15a8c2da1364c3b"
+  },
+  "frontend/eslint.config.js": {
+    "mtime": 1790855358.202956,
+    "seen": 1790863223.0903673,
+    "ast_hash": "49c8473bcfcec3aef596a5fb04a6df06",
+    "semantic_hash": "49c8473bcfcec3aef596a5fb04a6df06"
+  },
+  "frontend/package.json": {
+    "mtime": 1790855358.2049556,
+    "seen": 1790863223.0904088,
+    "ast_hash": "4efc0918dd92eb28ee16a29bd966ee2b",
+    "semantic_hash": "4efc0918dd92eb28ee16a29bd966ee2b"
+  },
+  "frontend/src/App.jsx": {
+    "mtime": 1790855438.4288201,
+    "seen": 1790863223.0904138,
+    "ast_hash": "7b16f8013ae7be40cce0303fcf219ce6",
+    "semantic_hash": "7b16f8013ae7be40cce0303fcf219ce6"
+  },
+  "frontend/src/Settings.jsx": {
+    "mtime": 1790855438.42982,
+    "seen": 1790863223.0904198,
+    "ast_hash": "08363972d18647f1b543b8e944c8c739",
+    "semantic_hash": "08363972d18647f1b543b8e944c8c739"
+  },
+  "frontend/src/main.jsx": {
+    "mtime": 1790855358.2069554,
+    "seen": 1790863223.090425,
+    "ast_hash": "781fa16205480b5620f0fd9e80832526",
+    "semantic_hash": "781fa16205480b5620f0fd9e80832526"
+  },
+  "frontend/vercel.json": {
+    "mtime": 1790855358.2079551,
+    "seen": 1790863223.0904303,
+    "ast_hash": "61bd31a2b0ac08f10f13c932b32d6ca1",
+    "semantic_hash": "61bd31a2b0ac08f10f13c932b32d6ca1"
+  },
+  "frontend/vite.config.js": {
+    "mtime": 1790855358.2079551,
+    "seen": 1790863223.090435,
+    "ast_hash": "88439104b3c207f17d33ef3160e3b080",
+    "semantic_hash": "88439104b3c207f17d33ef3160e3b080"
+  },
+  "manage.py": {
+    "mtime": 1790855358.2079551,
+    "seen": 1790863223.09044,
+    "ast_hash": "38c85e98cc52e78d9afe2ce97540e54c",
+    "semantic_hash": "38c85e98cc52e78d9afe2ce97540e54c"
+  }
+}

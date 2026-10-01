@@ -1,9 +1,9 @@
 :root {
-  --color-paper: #fbfbf8;
-  --color-surface: #ffffff;
-  --color-ink: #080808;
-  --color-muted: #686866;
-  --color-accent: #ff2d55;
+  --color-paper: #eeede8;
+  --color-surface: #f8f7f2;
+  --color-ink: #171817;
+  --color-muted: #73736d;
+  --color-accent: #d45a38;
   --font-display: 'Space Grotesk', Arial, sans-serif;
   --font-mono: 'DM Mono', monospace;
   --space-1: 8px;
@@ -13,5 +13,5 @@
   --space-5: 48px;
   --space-6: 64px;
   --space-7: 96px;
-  --shadow-hard: 5px 5px 0 #080808;
+  --shadow-hard: 7px 7px 0 #171817;
 }
