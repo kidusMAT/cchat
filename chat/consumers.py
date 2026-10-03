@@ -2,6 +2,21 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
+from .ambient import AMBIENT_GROUP
+
+
+class AmbientConsumer(AsyncWebsocketConsumer):
+    """Public relay for platform-wide reaction activity."""
+
+    async def connect(self):
+        await self.channel_layer.group_add(AMBIENT_GROUP, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(AMBIENT_GROUP, self.channel_name)
+
+    async def ambient_event(self, event):
+        await self.send_json({'type': 'ambient.event', 'emoji': event['emoji']})
 
 
 class ChatConsumer(AsyncWebsocketConsumer):

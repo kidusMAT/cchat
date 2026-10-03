@@ -42,6 +42,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-y0b$_9j1^)5$*k
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.vercel.app,.render.com,.railway.app').split(',')
+AMBIENT_SIMULATION_ENABLED = os.environ.get('AMBIENT_SIMULATION_ENABLED', 'True').lower() == 'true'
 
 
 # Application definition
@@ -199,8 +200,14 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
 CORS_ALLOW_CREDENTIALS = True
 
 # Channels Configuration
-if os.environ.get('REDIS_URL') or os.environ.get('REDIS_TLS_URL'):
-    redis_url = os.environ.get('REDIS_TLS_URL', os.environ.get('REDIS_URL'))
+redis_url = os.environ.get('REDIS_TLS_URL', os.environ.get('REDIS_URL'))
+if redis_url:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': redis_url,
+        },
+    }
     CHANNEL_LAYERS = {
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
@@ -210,6 +217,12 @@ if os.environ.get('REDIS_URL') or os.environ.get('REDIS_TLS_URL'):
         },
     }
 else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'cchat-cache',
+        },
+    }
     CHANNEL_LAYERS = {
         'default': {
             'BACKEND': 'channels.layers.InMemoryChannelLayer',
