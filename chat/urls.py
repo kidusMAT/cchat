@@ -39,6 +39,7 @@ urlpatterns = [
     path('check-following/<str:username>/', views.check_following, name='check_following'),
     
     # Chat Discovery
+    path('stats/landing/', views.landing_stats, name='landing_stats'),
     path('chats/recommended/', views.get_recommended_chats, name='recommended_chats'),
     path('chats/following/', views.get_following_chats, name='following_chats'),
     path('search/users/', views.search_users, name='search_users'),

@@ -5,7 +5,9 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Sum
+from django.db.models.functions import Coalesce
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.db.models import F
 from django.utils import timezone
@@ -16,6 +18,8 @@ from google.auth.transport import requests
 import urllib.request
 import urllib.error
 import json
+import time
+from datetime import timedelta
 
 from .models import (
     Profile, Follow, Conversation, Message, MessageReaction,
@@ -33,6 +37,19 @@ from .serializers import (
 )
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from .ambient import AMBIENT_GROUP, AMBIENT_REACTION_EMOJIS
+
+
+def broadcast_ambient_reaction(reaction_type):
+    emoji = AMBIENT_REACTION_EMOJIS.get(reaction_type)
+    if not emoji:
+        return
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        AMBIENT_GROUP,
+        {'type': 'ambient.event', 'emoji': emoji},
+    )
+    cache.set('ambient:last_real_event_at', time.time(), timeout=120)
 
 
 def mutually_blocked_user_ids(user):
@@ -488,6 +505,44 @@ def check_following(request, username):
 
 # ==================== Chat Discovery Views ====================
 
+def public_conversation_ids():
+    """Return the same public conversation candidate set used by discovery."""
+    return ChatVisibility.objects.filter(
+        is_public=True,
+        conversation__is_removed=False,
+        user__is_active=True,
+    ).values_list('conversation_id', flat=True).distinct()
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def landing_stats(request):
+    cached = cache.get('landing_stats')
+    if cached is not None:
+        return Response(cached)
+
+    now = timezone.now()
+    day_ago = now - timedelta(hours=24)
+    hour_ago = now - timedelta(hours=1)
+    public_ids = public_conversation_ids()
+    active = Conversation.objects.filter(
+        id__in=public_ids,
+        updated_at__gte=day_ago,
+        is_removed=False,
+    )
+    reaction_total = active.aggregate(
+        total=Coalesce(Sum('likes'), 0) + Coalesce(Sum('dislikes'), 0) +
+        Coalesce(Sum('caps'), 0) + Coalesce(Sum('smiles'), 0),
+    )['total'] or 0
+    threads_started = Conversation.objects.filter(
+        id__in=public_ids,
+        created_at__gte=hour_ago,
+        is_removed=False,
+    ).count()
+    data = {'reactions_today': reaction_total, 'threads_started_this_hour': threads_started}
+    cache.set('landing_stats', data, 45)
+    return Response(data)
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_recommended_chats(request):
@@ -524,8 +579,7 @@ def get_recommended_chats(request):
     page_size = int(request.GET.get('page_size', 20))
 
     # ── STAGE 1: Candidate Retrieval ─────────────────────────────────────────
-    public_visibilities = ChatVisibility.objects.filter(is_public=True, conversation__is_removed=False, user__is_active=True)
-    conversation_ids = public_visibilities.values_list('conversation_id', flat=True).distinct()
+    conversation_ids = public_conversation_ids()
 
     # Annotate with message count and latest message time for efficiency
     conversations = Conversation.objects.filter(
@@ -1209,6 +1263,7 @@ def react_to_conversation(request, conversation_id):
         conversation.smiles += 1
     
     conversation.save()
+    broadcast_ambient_reaction(reaction_type)
     
     return Response(ConversationSerializer(conversation, context={'request': request}).data)
 
@@ -1272,6 +1327,7 @@ def react_to_message(request, message_id):
         defaults={'reaction_type': reaction_type}
     )
     
+    should_broadcast = created
     if created:
         # Increment new reaction count
         if reaction_type == 'like':
@@ -1308,6 +1364,7 @@ def react_to_message(request, message_id):
             
             reaction.reaction_type = reaction_type
             reaction.save()
+            should_broadcast = True
             
             if reaction_type == 'like':
                 message.likes += 1
@@ -1319,6 +1376,8 @@ def react_to_message(request, message_id):
                 message.smiles += 1
     
     message.save()
+    if should_broadcast:
+        broadcast_ambient_reaction(reaction_type)
     
     return Response(MessageSerializer(message, context={'request': request}).data)
 
