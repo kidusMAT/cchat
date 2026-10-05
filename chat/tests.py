@@ -9,6 +9,7 @@ from .consumers import ChatConsumer
 from .models import (
     AnonymousProfile, ChatVisibility, Conversation, Follow, Message,
     MessageComment, MessagePoll, PollVote, SponsorshipRequest, Report, Block,
+    ConversationBookmark,
 )
 
 
@@ -282,6 +283,63 @@ class CChatAPITestCase(TestCase):
         self.assertEqual(self.client.get('/api/profile/eve/').status_code, 404)
         self.assertEqual(self.client.get('/api/search/users/?q=eve').data, [])
         self.assertNotIn(reverse_conversation.id, [row['conversation_id'] for row in self.client.get('/api/chats/recommended/').data])
+
+    def test_reactions_received_counts_only_public_conversations(self):
+        """Confirm profile stats sum only reactions from public conversations."""
+        # self.conversation is private by default (is_public=False)
+        self.conversation.likes = 10
+        self.conversation.dislikes = 10
+        self.conversation.caps = 10
+        self.conversation.smiles = 10
+        self.conversation.save()
+
+        # Create a second conversation for alice that is public
+        public_conv = Conversation.objects.create(likes=5, dislikes=2, caps=3, smiles=1)  # sum = 11
+        public_conv.participants.add(self.alice, self.bob)
+        ChatVisibility.objects.create(user=self.alice, conversation=public_conv, is_public=True)
+        ChatVisibility.objects.create(user=self.bob, conversation=public_conv, is_public=False)
+
+        # Alice's profile should only count the 11 reactions from public_conv, not the 40 from private self.conversation
+        self.authenticate(self.alice)
+        response = self.client.get(f'/api/profile/{self.alice.username}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['reactions_received'], 11)
+
+        # Also verify /api/profile/ (get_profile)
+        my_profile = self.client.get('/api/profile/')
+        self.assertEqual(my_profile.status_code, 200)
+        self.assertEqual(my_profile.data['reactions_received'], 11)
+
+    def test_get_bookmarks_only_returns_requesting_users_bookmarks(self):
+        """GET /api/bookmarks/ returns only current user's bookmarked conversations."""
+        other_conv = Conversation.objects.create()
+        other_conv.participants.add(self.bob, self.eve)
+        ChatVisibility.objects.create(user=self.bob, conversation=other_conv, is_public=True)
+        ChatVisibility.objects.create(user=self.eve, conversation=other_conv, is_public=True)
+
+        # Bob bookmarks other_conv
+        ConversationBookmark.objects.create(user=self.bob, conversation=other_conv)
+        # Alice bookmarks self.conversation
+        ConversationBookmark.objects.create(user=self.alice, conversation=self.conversation)
+
+        # Unauthenticated cannot access
+        anon_res = self.client.get('/api/bookmarks/')
+        self.assertEqual(anon_res.status_code, 401)
+
+        # Alice only gets self.conversation
+        self.authenticate(self.alice)
+        alice_res = self.client.get('/api/bookmarks/')
+        self.assertEqual(alice_res.status_code, 200)
+        alice_ids = [c['id'] for c in alice_res.data]
+        self.assertEqual(alice_ids, [self.conversation.id])
+
+        # Bob only gets other_conv
+        self.authenticate(self.bob)
+        bob_res = self.client.get('/api/bookmarks/')
+        self.assertEqual(bob_res.status_code, 200)
+        bob_ids = [c['id'] for c in bob_res.data]
+        self.assertEqual(bob_ids, [other_conv.id])
+
 class JWTBlacklistConfigurationTest(TestCase):
     def test_blacklist_app_is_installed(self):
         from django.conf import settings

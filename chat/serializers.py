@@ -1,3 +1,5 @@
+from django.db.models import Sum, F, Value
+from django.db.models.functions import Coalesce
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
@@ -28,20 +30,40 @@ class ProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     avatar_url = serializers.SerializerMethodField()
     is_staff = serializers.BooleanField(source='user.is_staff', read_only=True)
+    reactions_received = serializers.SerializerMethodField()
     
     class Meta:
         model = Profile
         fields = [
             'id', 'username', 'is_staff', 'bio', 'avatar', 'avatar_url', 'rank',
             'followers_count', 'following_count', 'posts_count',
+            'reactions_received',
             'default_conversations_public',
             'verification_status', 'verification_text', 'verification_url',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'rank', 'followers_count', 'following_count', 'posts_count', 'created_at', 'updated_at', 'verification_status', 'verification_reviewed_by', 'verification_reviewed_at']
+        read_only_fields = ['id', 'rank', 'followers_count', 'following_count', 'posts_count', 'reactions_received', 'created_at', 'updated_at', 'verification_status', 'verification_reviewed_by', 'verification_reviewed_at']
 
     def get_avatar_url(self, obj):
         return obj.get_avatar_url()
+
+    def get_reactions_received(self, obj):
+        result = Conversation.objects.filter(
+            visibilities__user=obj.user,
+            visibilities__is_public=True,
+            is_removed=False,
+        ).aggregate(
+            total=Coalesce(
+                Sum(
+                    Coalesce(F('likes'), Value(0))
+                    + Coalesce(F('dislikes'), Value(0))
+                    + Coalesce(F('caps'), Value(0))
+                    + Coalesce(F('smiles'), Value(0))
+                ),
+                Value(0),
+            )
+        )
+        return result['total']
 
 
 class RegisterSerializer(serializers.ModelSerializer):

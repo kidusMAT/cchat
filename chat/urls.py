@@ -52,6 +52,7 @@ urlpatterns = [
     path('conversations/<int:conversation_id>/toggle-visibility/', views.toggle_visibility, name='toggle_visibility'),
     path('conversations/<int:conversation_id>/react/', views.react_to_conversation, name='react-to-conversation'),
     path('conversations/<int:conversation_id>/bookmark/', views.toggle_bookmark, name='toggle-bookmark'),
+    path('bookmarks/', views.get_user_bookmarks, name='user_bookmarks'),
     
     # Messages
     path('messages/send/', views.send_message, name='send_message'),

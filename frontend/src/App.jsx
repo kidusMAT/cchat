@@ -122,22 +122,27 @@ function AmbientLayer() {
 /* Compute message background tint based on highest reaction count */
 function getMessageBgStyle(message) {
   const likes = message.likes || 0;
+  const smiles = message.smiles || 0;
   const caps = message.caps || 0;
   const dislikes = message.dislikes || 0;
-  const maxReaction = Math.max(likes, caps, dislikes);
+  const maxReaction = Math.max(likes, smiles, caps, dislikes);
   if (maxReaction === 0) return {};
   const intensity = Math.min(maxReaction / 10, 1); // normalize 0..1 at 10+ reactions
   const alpha = 0.08 + intensity * 0.22; // 8%–30% tint
-  if (likes >= caps && likes >= dislikes) {
-    // fire/like dominant → warm orange-red tint
+  if (likes >= smiles && likes >= caps && likes >= dislikes) {
+    // fire dominant → warm orange-red tint
     return { background: `color-mix(in srgb, #ff6b35 ${Math.round(alpha * 100)}%, var(--surface))` };
   }
-  if (caps >= likes && caps >= dislikes) {
-    // heart/cap dominant → pink tint
+  if (smiles >= likes && smiles >= caps && smiles >= dislikes) {
+    // heart/smile dominant → pink tint
     return { background: `color-mix(in srgb, #ff2d55 ${Math.round(alpha * 100)}%, var(--surface))` };
   }
-  // skull/dislike dominant → cool grey-blue tint
-  return { background: `color-mix(in srgb, #6c757d ${Math.round(alpha * 100)}%, var(--surface))` };
+  if (caps >= likes && caps >= smiles && caps >= dislikes) {
+    // cap dominant → blue tint
+    return { background: `color-mix(in srgb, #0284c7 ${Math.round(alpha * 100)}%, var(--surface))` };
+  }
+  // skull/dislike dominant → purple tint
+  return { background: `color-mix(in srgb, #8b5cf6 ${Math.round(alpha * 100)}%, var(--surface))` };
 }
 
 function isCurrentUserSender(message, currentUser, otherParticipant = null) {
@@ -184,14 +189,39 @@ function Message({ message, currentUser, participants = [], onReact, isPublic: c
   }
 
   const isMine = isCurrentUserSender(message, currentUser);
-  const visualRight = isMine;
-  const senderName = message.sender_username || (isMine ? currentUser?.username : 'Anonymous');
-  const sender = participants[participantIndex >= 0 ? participantIndex : 0];
+
+  // Check if current user is an active participant in this conversation
+  const session = sessionUser();
+  const myUserId = session?.id || currentUser?.user_id;
+  const myUsername = (session?.username || currentUser?.username || '').toLowerCase();
+  const viewerIndex = participants.findIndex((p) =>
+    (myUserId && p.id && String(p.id) === String(myUserId)) ||
+    (myUsername && p.username && p.username.toLowerCase() === myUsername)
+  );
+  const isViewerInConversation = viewerIndex >= 0;
+
+  let visualRight = false;
+  if (isViewerInConversation) {
+    // If the viewer is in the chat, their own messages are on the right, others on the left
+    visualRight = isMine || (participantIndex >= 0 && participantIndex === viewerIndex);
+  } else {
+    // If the viewer is a spectator/reader, Participant 0 is on the left, Participant 1 (or odd index) is on the right
+    if (participantIndex >= 0) {
+      visualRight = participantIndex % 2 === 1;
+    } else {
+      // Fallback for anonymous messages without indexed participant
+      const hash = String(senderId || message.sender_username || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+      visualRight = hash % 2 === 1;
+    }
+  }
+
+  const senderName = message.sender_username || (isMine ? currentUser?.username : (participants[participantIndex]?.username || 'Anonymous'));
+  const sender = participants[participantIndex >= 0 ? participantIndex : (visualRight ? 1 : 0)];
   const bgStyle = getMessageBgStyle(message);
 
   return (
     <div className={`message-row ${visualRight ? 'message-mine' : 'message-other'}`}>
-      <Avatar person={sender || senderName} small index={participantIndex < 0 ? 0 : participantIndex} />
+      <Avatar person={sender || senderName} small index={participantIndex >= 0 ? participantIndex : (visualRight ? 1 : 0)} />
       <div className="message-body">
         <div className="message-meta">
           <ParticipantLink person={isMine ? null : sender}><strong>{isMine ? 'You' : senderName}</strong></ParticipantLink>
@@ -199,10 +229,46 @@ function Message({ message, currentUser, participants = [], onReact, isPublic: c
         </div>
         <p style={bgStyle}>{message.text}</p>
         <div className="message-reactions">
-          <button onClick={() => onReact(message.id, 'like')} aria-label="React with fire"><Flame size={15} /></button>
-          <button onClick={() => onReact(message.id, 'cap')} aria-label="React with heart"><Heart size={15} /></button>
-          <button onClick={() => onReact(message.id, 'dislike')} aria-label="React with skull"><Skull size={15} /></button>
-          <span className="message-reaction-count">{(message.likes || 0) + (message.caps || 0)} / {message.dislikes || 0}</span>
+          <button
+            type="button"
+            className={`reaction-btn reaction-flame ${message.user_reaction === 'like' ? 'is-active' : ''}`}
+            onClick={(e) => onReact(message.id, 'like', e)}
+            aria-label="React with fire"
+            title="Fire"
+          >
+            <span className="reaction-emoji">🔥</span>
+            {(message.likes || 0) > 0 && <span className="reaction-count">{message.likes}</span>}
+          </button>
+          <button
+            type="button"
+            className={`reaction-btn reaction-heart ${message.user_reaction === 'smile' ? 'is-active' : ''}`}
+            onClick={(e) => onReact(message.id, 'smile', e)}
+            aria-label="React with heart"
+            title="Heart"
+          >
+            <span className="reaction-emoji">♥</span>
+            {(message.smiles || 0) > 0 && <span className="reaction-count">{message.smiles}</span>}
+          </button>
+          <button
+            type="button"
+            className={`reaction-btn reaction-skull ${message.user_reaction === 'dislike' ? 'is-active' : ''}`}
+            onClick={(e) => onReact(message.id, 'dislike', e)}
+            aria-label="React with skull"
+            title="Skull"
+          >
+            <span className="reaction-emoji">💀</span>
+            {(message.dislikes || 0) > 0 && <span className="reaction-count">{message.dislikes}</span>}
+          </button>
+          <button
+            type="button"
+            className={`reaction-btn reaction-cap ${message.user_reaction === 'cap' ? 'is-active' : ''}`}
+            onClick={(e) => onReact(message.id, 'cap', e)}
+            aria-label="React with cap"
+            title="Cap"
+          >
+            <span className="reaction-emoji">🧢</span>
+            {(message.caps || 0) > 0 && <span className="reaction-count">{message.caps}</span>}
+          </button>
         </div>
       </div>
     </div>
@@ -241,9 +307,37 @@ function ChatPage() {
   useEffect(() => { const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws'); const query = token() ? `?token=${encodeURIComponent(token())}` : ''; const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`); socket.onmessage = (event) => { const data = JSON.parse(event.data); if (data.type === 'receive_message') setMessages((current) => [...current, { id: data.id, sender: data.sender_id || data.senderId, sender_username: data.sender_username, text: data.text, timestamp: data.timestamp }]); if (data.type === 'sponsorship_update' && data.sponsorship) setConversation((current) => ({ ...current, sponsorships: [data.sponsorship] })); }; socketRef.current = socket; return () => { socket.close(); socketRef.current = null; }; }, [id]);
   const react = async (type) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { const response = await axios.post(`/api/conversations/${id}/react/`, { reaction_type: type }, authConfig()); setConversation((current) => ({ ...current, ...response.data })); } catch { /* keep the conversation readable */ } };
   const toggleBookmark = async () => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { const response = await axios.post(`/api/conversations/${id}/bookmark/`, {}, authConfig()); setConversation((current) => ({ ...current, is_bookmarked: response.data.is_bookmarked })); } catch { setError('Could not save this room right now.'); } };
-  const reactMessage = async (messageId, type) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { const response = await axios.post(`/api/messages/${messageId}/react/`, { reaction_type: type }, authConfig()); setMessages((current) => current.map((message) => message.id === messageId ? { ...message, ...response.data } : message)); } catch {} };
+
+  const floatReaction = (emoji, event) => {
+    let left = window.innerWidth / 2;
+    let top = window.innerHeight / 2;
+    if (event?.clientX && event?.clientY) {
+      left = event.clientX;
+      top = event.clientY;
+    } else if (event?.currentTarget) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      left = rect.left + rect.width / 2;
+      top = rect.top;
+    }
+    const item = { id: `${Date.now()}-${Math.random()}`, emoji, left: `${left}px`, top: `${top}px` };
+    setFloating((items) => [...items, item]);
+    setTimeout(() => setFloating((items) => items.filter((entry) => entry.id !== item.id)), 1200);
+  };
+
+  const reactMessage = async (messageId, type, event) => {
+    const emojiMap = { like: '🔥', smile: '♥', dislike: '💀', cap: '🧢' };
+    if (emojiMap[type]) floatReaction(emojiMap[type], event);
+    if (!token()) {
+      navigate(`/login?next=%2Fchat%2F${id}`);
+      return;
+    }
+    try {
+      const response = await axios.post(`/api/messages/${messageId}/react/`, { reaction_type: type }, authConfig());
+      setMessages((current) => current.map((message) => (message.id === messageId ? { ...message, ...response.data } : message)));
+    } catch {}
+  };
+
   const voteSponsorship = async (sponsorshipId, accepted) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } const response = await axios.post(`/api/conversations/${id}/sponsorships/${sponsorshipId}/vote/`, { accepted }, authConfig()); setConversation((current) => ({ ...current, sponsorships: (current.sponsorships || []).map((item) => item.id === sponsorshipId ? { ...item, ...response.data } : item) })); };
-  const floatReaction = (emoji, event) => { const item = { id: `${Date.now()}-${Math.random()}`, emoji, left: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2 }; setFloating((items) => [...items, item]); setTimeout(() => setFloating((items) => items.filter((entry) => entry.id !== item.id)), 1100); };
   const send = async (event) => { event.preventDefault(); if (!input.trim()) return; if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } const text = input.trim(); setInput(''); if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: 'send_message', senderId: currentUser?.username, text })); else { try { const response = await axios.post('/api/messages/send/', { conversation_id: id, text }, authConfig()); setMessages((current) => [...current, response.data]); } catch (err) { setError(err.response?.data?.error || 'Message could not be sent.'); } } };
   if (loading) return <div className="app-shell"><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="loading-state">Loading conversation…</main></div>;
   if (error || !conversation) return <div className="app-shell"><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="empty-state container"><Link to="/" className="back-link"><ArrowLeft size={16} /> Back to feed</Link><h1>{error || 'Conversation unavailable.'}</h1></main></div>;
@@ -308,7 +402,6 @@ function ChatPage() {
             </div>
           </div>
           {sponsorship && <div className={`sponsor-banner ${sponsorship.user1_accepted && sponsorship.user2_accepted ? 'sponsor-live' : 'sponsor-pending'}`}><strong>{sponsorship.user1_accepted && sponsorship.user2_accepted ? `Presented by ${sponsorship.sponsor_name}` : `Possible sponsor: ${sponsorship.sponsor_name}`}</strong>{sponsorship.sponsor_text && <span>{sponsorship.sponsor_text}</span>}{viewerParticipant && <div className="sponsor-actions"><button onClick={() => voteSponsorship(sponsorship.id, true)} disabled={(viewerParticipant.id === sponsorship.user1 && sponsorship.user1_accepted) || (viewerParticipant.id === sponsorship.user2 && sponsorship.user2_accepted)}>Accept</button><button onClick={() => voteSponsorship(sponsorship.id, false)}>Decline</button></div>}</div>}
-          {sponsorship && <div className={`sponsor-banner ${sponsorship.user1_accepted && sponsorship.user2_accepted ? 'sponsor-live' : 'sponsor-pending'}`}><strong>{sponsorship.user1_accepted && sponsorship.user2_accepted ? `Presented by ${sponsorship.sponsor_name}` : `Possible sponsor: ${sponsorship.sponsor_name}`}</strong>{sponsorship.sponsor_text && <span>{sponsorship.sponsor_text}</span>}{viewerParticipant && <div className="sponsor-actions"><button onClick={() => voteSponsorship(sponsorship.id, true)} disabled={(viewerParticipant.id === sponsorship.user1 && sponsorship.user1_accepted) || (viewerParticipant.id === sponsorship.user2 && sponsorship.user2_accepted)}>Accept</button><button onClick={() => voteSponsorship(sponsorship.id, false)}>Decline</button></div>}</div>}
           <div className="conversation-stream" ref={streamRef}>
             {messages.length ? messages.map((message) => (
               <Message
@@ -325,6 +418,15 @@ function ChatPage() {
               <strong>{ids.length > 1 ? 'Scroll for the next honest thought' : 'You reached the end of this room'} <ArrowUpRight size={16} /></strong>
             </div>
           </div>
+          {floating.map((item) => (
+            <span
+              className="room-floating-emoji"
+              style={{ left: item.left, top: item.top }}
+              key={item.id}
+            >
+              {item.emoji}
+            </span>
+          ))}
           {/* Live audience bar */}
           <div className="audience-bar">
             <span className="audience-bar-label"><Eye size={12} /> {conversation.views ?? 0} watching</span>
@@ -332,17 +434,6 @@ function ChatPage() {
               🔥 {conversation.likes ?? 0} · 💀 {conversation.dislikes ?? 0} · ♥ {conversation.caps ?? 0}
             </span>
           </div>
-          <div className="reaction-dock">
-            <span>React to the room</span>
-            <button className={conversation.user_reactions?.includes('like') ? 'is-active' : ''} aria-label="Fire reaction" onClick={(event) => { floatReaction('🔥', event); react('like'); }}>🔥 {conversation.likes ?? 0}</button>
-            <button className={conversation.user_reactions?.includes('dislike') ? 'is-active' : ''} aria-label="Skull reaction" onClick={(event) => { floatReaction('💀', event); react('dislike'); }}>💀 {conversation.dislikes ?? 0}</button>
-            <button className={conversation.user_reactions?.includes('cap') ? 'is-active' : ''} aria-label="Heart reaction" onClick={(event) => { floatReaction('♥', event); react('cap'); }}>♥ {conversation.caps ?? 0}</button>
-            {floating.map((item) => <span className="floating-emoji" style={{ left: item.left }} key={item.id}>{item.emoji}</span>)}
-          </div>
-          <form className="message-composer" onSubmit={send}>
-            <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={token() ? 'Say something honest…' : 'Log in to reply'} aria-label="Message" />
-            <button type="submit" aria-label="Send message"><Send size={17} /></button>
-          </form>
         </section>
         <aside className="chat-sidebar right-sidebar">
           <div className="related-card">
@@ -367,6 +458,10 @@ function PrivateConversationList({ conversations, activeId, loading }) {
   return (
     <aside className="private-inbox-list">
       <div className="private-inbox-list-head">
+        <div className="private-inbox-top-actions">
+          <Logo />
+          <Link to="/" className="back-link"><ArrowLeft size={14} /> Feed</Link>
+        </div>
         <span className="eyebrow">Private messages</span>
         <h1>Inbox</h1>
       </div>
@@ -412,7 +507,6 @@ function PrivateConversationList({ conversations, activeId, loading }) {
 /* /inbox — redirect to first conversation or show empty state */
 function InboxPage() {
   const navigate = useNavigate();
-  const [dark, setDark] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -424,8 +518,7 @@ function InboxPage() {
   }, [loading, conversations, navigate]);
   if (!token()) return null;
   return (
-    <div className={`app-shell private-inbox-shell ${dark ? 'theme-dark' : ''}`}>
-      <Header dark={dark} onToggle={() => setDark(!dark)} />
+    <div className="app-shell private-inbox-shell">
       <main className="private-inbox-layout container">
         <PrivateConversationList conversations={conversations} loading={loading} />
         <section className="private-empty-pane">
@@ -444,7 +537,6 @@ function InboxPage() {
 /* /inbox/:id — individual private chat */
 function PrivateChatPage() {
   const { id } = useParams(); const navigate = useNavigate();
-  const [dark, setDark] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [conversation, setConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -536,8 +628,7 @@ function PrivateChatPage() {
   const otherParticipant = conversation?.other_participant;
 
   return (
-    <div className={`app-shell private-inbox-shell ${dark ? 'theme-dark' : ''}`}>
-      <Header dark={dark} onToggle={() => setDark(!dark)} />
+    <div className="app-shell private-inbox-shell">
       <main className="private-inbox-layout container">
         <PrivateConversationList conversations={conversations} activeId={id} loading={loading} />
         <section className="private-chat-pane">
@@ -616,7 +707,17 @@ function Footer() {
     </footer>
   );
 }
-function ProfileStats({ profile, className = '' }) { return <div className={`profile-stats ${className}`}><span><strong>{profile.followers_count ?? 0}</strong> followers</span><span><strong>{profile.following_count ?? 0}</strong> following</span><span><strong>{profile.posts_count ?? 0}</strong> posts</span><span>{memberSince(profile.created_at)}</span></div>; }
+function ProfileStats({ profile, className = '' }) {
+  return (
+    <div className={`profile-stats ${className}`}>
+      <span><strong>{profile.followers_count ?? 0}</strong> followers</span>
+      <span><strong>{profile.following_count ?? 0}</strong> following</span>
+      <span><strong>{profile.posts_count ?? 0}</strong> posts</span>
+      <span><strong>{profile.reactions_received ?? 0}</strong> reactions received</span>
+      <span>{memberSince(profile.created_at)}</span>
+    </div>
+  );
+}
 
 /* ─── PROFILE PAGE: /profile/:username ─── */
 function ProfilePage() {
@@ -654,7 +755,9 @@ function ProfilePage() {
                 <div>
                   <span className="eyebrow">Public profile</span>
                   <h1>@{profile.username}</h1>
-                  <p>{profile.bio || 'No bio yet.'}</p>
+                  <p className={`profile-bio ${!profile.bio ? 'is-fallback' : ''}`}>
+                    {profile.bio || 'No bio yet.'}
+                  </p>
                 </div>
                 <div className="profile-hero-actions">
                   {/* "Find a user" always shown */}
@@ -677,25 +780,43 @@ function ProfilePage() {
               <ProfileStats profile={profile} />
               <section className="account-list">
                 <div className="section-heading"><h2>{isOwnProfile ? 'Your conversations' : 'Public conversations'}</h2></div>
-                {chats.map((chat) => (
-                  /* Conversation click → private chat (/inbox/:id) */
-                  <Link
-                    className="account-conversation"
-                    to={`/inbox/${chat.id}`}
-                    key={chat.id}
-                  >
-                    <span className="thread-id">CCHAT-{String(chat.id).padStart(3, '0')}</span>
-                    <strong>{displayName(chat.other_participant) || 'Conversation'}</strong>
-                    <span>{chat.last_message?.text || 'No messages yet.'}</span>
-                    <ChevronRight size={16} />
-                  </Link>
-                ))}
+                {chats.length ? (
+                  chats.map((chat) => (
+                    /* Conversation click → private chat (/inbox/:id) */
+                    <Link
+                      className="account-conversation"
+                      to={`/inbox/${chat.id}`}
+                      key={chat.id}
+                    >
+                      <span className="thread-id">CCHAT-{String(chat.id).padStart(3, '0')}</span>
+                      <div className="account-conv-name">
+                        <strong>{displayName(chat.other_participant) || 'Conversation'}</strong>
+                        {isOwnProfile && (
+                          <span className={`pill-badge ${chat.is_public ? 'is-public' : 'is-private'}`}>
+                            {chat.is_public ? 'Public' : 'Private'}
+                          </span>
+                        )}
+                      </div>
+                      <span>{chat.last_message?.text || 'No messages yet.'}</span>
+                      <ChevronRight size={16} />
+                    </Link>
+                  ))
+                ) : (
+                  <div className="account-empty-state">
+                    <p>{isOwnProfile ? "You haven't started a thread yet." : "No public conversations yet."}</p>
+                    {isOwnProfile && (
+                      <button className="button button-primary" onClick={() => setCreateOpen(true)}>
+                        Start a thread <ArrowUpRight size={16} />
+                      </button>
+                    )}
+                  </div>
+                )}
               </section>
             </>
           ) : <div className="loading-state">Loading profile…</div>}
         </main>
       )}
-      {createOpen && <CreateThreadModal initialUsername={username} onClose={() => setCreateOpen(false)} />}
+      {createOpen && <CreateThreadModal initialUsername={isOwnProfile ? '' : username} onClose={() => setCreateOpen(false)} />}
     </div>
   );
 }
@@ -705,6 +826,9 @@ function AccountPage() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [conversations, setConversations] = useState([]);
+  const [bookmarks, setBookmarks] = useState([]);
+  const [activeTab, setActiveTab] = useState('conversations');
+  const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState([]);
   const [finderOpen, setFinderOpen] = useState(false);
@@ -714,9 +838,11 @@ function AccountPage() {
     Promise.all([
       axios.get('/api/profile/', authConfig()),
       axios.get('/api/conversations/', authConfig()),
-    ]).then(([p, c]) => {
+      axios.get('/api/bookmarks/', authConfig()),
+    ]).then(([p, c, b]) => {
       setProfile(p.data);
       setConversations(c.data || []);
+      setBookmarks(b.data || []);
     });
   }, [navigate]);
 
@@ -739,7 +865,9 @@ function AccountPage() {
           <div className="account-profile-copy">
             <span className="eyebrow">Your room</span>
             <h1>{profile?.username || sessionUser()?.username || 'Account'}.</h1>
-            <p>{profile?.bio || 'Your private conversations, in one place.'}</p>
+            <p className={`account-profile-bio ${!profile?.bio ? 'is-fallback' : ''}`}>
+              {profile?.bio || 'Your private conversations, in one place.'}
+            </p>
           </div>
           <span className="account-profile-mark" aria-hidden="true">{(profile?.username || sessionUser()?.username || 'A').slice(0, 1).toUpperCase()}</span>
         </div>
@@ -761,20 +889,82 @@ function AccountPage() {
           <div className="section-heading">
             <div>
               <span className="section-kicker">Your activity</span>
-              <h2>Your conversations</h2>
+              <h2>{activeTab === 'conversations' ? 'Your conversations' : 'Bookmarks'}</h2>
+            </div>
+            <div className="account-tabs">
+              <button
+                type="button"
+                className={`account-tab ${activeTab === 'conversations' ? 'is-active' : ''}`}
+                onClick={() => setActiveTab('conversations')}
+              >
+                Conversations ({conversations.length})
+              </button>
+              <button
+                type="button"
+                className={`account-tab ${activeTab === 'bookmarks' ? 'is-active' : ''}`}
+                onClick={() => setActiveTab('bookmarks')}
+              >
+                <Bookmark size={13} style={{ marginRight: 4, verticalAlign: -1 }} />
+                Bookmarks ({bookmarks.length})
+              </button>
             </div>
           </div>
-          {conversations.map((conversation) => (
-            /* Conversation click → private chat */
-            <Link className="account-conversation" to={`/inbox/${conversation.id}`} key={conversation.id}>
-              <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
-              <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
-              <span>{conversation.last_message?.text || 'No messages yet.'}</span>
-              <ChevronRight size={16} />
-            </Link>
-          ))}
+
+          {activeTab === 'conversations' ? (
+            conversations.length ? (
+              conversations.map((conversation) => (
+                /* Conversation click → private chat */
+                <Link className="account-conversation" to={`/inbox/${conversation.id}`} key={conversation.id}>
+                  <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
+                  <div className="account-conv-name">
+                    <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
+                    <span className={`pill-badge ${conversation.is_public ? 'is-public' : 'is-private'}`}>
+                      {conversation.is_public ? 'Public' : 'Private'}
+                    </span>
+                  </div>
+                  <span>{conversation.last_message?.text || 'No messages yet.'}</span>
+                  <ChevronRight size={16} />
+                </Link>
+              ))
+            ) : (
+              <div className="account-empty-state">
+                <p>You haven't started a thread yet.</p>
+                <button className="button button-primary" onClick={() => setCreateOpen(true)}>
+                  Start a thread <ArrowUpRight size={16} />
+                </button>
+              </div>
+            )
+          ) : (
+            bookmarks.length ? (
+              bookmarks.map((conversation) => (
+                <Link
+                  className="account-conversation"
+                  to={conversation.is_public ? `/chat/${conversation.id}` : `/inbox/${conversation.id}`}
+                  key={conversation.id}
+                >
+                  <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
+                  <div className="account-conv-name">
+                    <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
+                    <span className={`pill-badge ${conversation.is_public ? 'is-public' : 'is-private'}`}>
+                      {conversation.is_public ? 'Public' : 'Private'}
+                    </span>
+                  </div>
+                  <span>{conversation.last_message?.text || 'No messages yet.'}</span>
+                  <ChevronRight size={16} />
+                </Link>
+              ))
+            ) : (
+              <div className="account-empty-state">
+                <p>You haven't bookmarked any conversations yet.</p>
+                <Link className="button button-primary" to="/explore">
+                  Explore topics <ArrowUpRight size={16} />
+                </Link>
+              </div>
+            )
+          )}
         </section>
       </main>
+      {createOpen && <CreateThreadModal onClose={() => setCreateOpen(false)} />}
     </div>
   );
 }

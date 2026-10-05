@@ -1278,6 +1278,19 @@ def toggle_bookmark(request, conversation_id):
     return Response({'is_bookmarked': created})
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_bookmarks(request):
+    """Get current user's bookmarked conversations"""
+    bookmarks = ConversationBookmark.objects.filter(
+        user=request.user,
+        conversation__is_removed=False,
+    ).select_related('conversation')
+    conversations = [b.conversation for b in bookmarks]
+    serializer = ConversationSerializer(conversations, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
 # ==================== Message Views ====================
 
 @api_view(['POST'])
