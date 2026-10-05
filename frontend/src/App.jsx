@@ -1,6 +1,6 @@
 /* Hallmark · macrostructure: Marquee + live index · tone: tactile editorial · anchor hue: hot-pink */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BrowserRouter as Router, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUpRight, Bookmark, ChevronRight, Eye, EyeOff, Flame, Heart, LogOut, Moon, Search, Send, Skull, Sparkles, Sun, Users } from 'lucide-react';
 import axios from 'axios';
 import SettingsPage from './Settings.jsx';
@@ -725,21 +725,39 @@ function ProfilePage() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [chats, setChats] = useState([]);
+  const [bookmarks, setBookmarks] = useState([]);
+  const [activeTab, setActiveTab] = useState('conversations');
   const [error, setError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [finderOpen, setFinderOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [users, setUsers] = useState([]);
 
   const currentUser = sessionUser();
   const isOwnProfile = currentUser && currentUser.username === username;
 
   useEffect(() => {
-    Promise.all([
+    const fetches = [
       axios.get(`/api/profile/${encodeURIComponent(username)}/`, authConfig()),
       axios.get(`/api/profile/${encodeURIComponent(username)}/conversations/`, authConfig()),
-    ]).then(([p, c]) => {
+    ];
+    if (isOwnProfile) fetches.push(axios.get('/api/bookmarks/', authConfig()));
+    Promise.all(fetches).then(([p, c, b]) => {
       setProfile(p.data);
       setChats(c.data || []);
+      if (b) setBookmarks(b.data || []);
     }).catch((err) => setError(err.response?.data?.error || 'Profile unavailable.'));
   }, [username]);
+
+  useEffect(() => {
+    if (!isOwnProfile) return;
+    if (!query.trim()) { setUsers([]); return; }
+    const timer = setTimeout(async () => {
+      const response = await axios.get(`/api/search/users/?q=${encodeURIComponent(query.trim())}`, authConfig());
+      setUsers(response.data || []);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, isOwnProfile]);
 
   return (
     <div className="app-shell">
@@ -753,63 +771,141 @@ function ProfilePage() {
               <div className="profile-hero">
                 <Avatar person={profile} />
                 <div>
-                  <span className="eyebrow">Public profile</span>
+                  <span className="eyebrow">{isOwnProfile ? 'Your room' : 'Public profile'}</span>
                   <h1>@{profile.username}</h1>
                   <p className={`profile-bio ${!profile.bio ? 'is-fallback' : ''}`}>
-                    {profile.bio || 'No bio yet.'}
+                    {profile.bio || (isOwnProfile ? 'Your private conversations, in one place.' : 'No bio yet.')}
                   </p>
                 </div>
                 <div className="profile-hero-actions">
-                  {/* "Find a user" always shown */}
-                  <button className="button" onClick={() => navigate('/inbox')}>
-                    <Search size={16} /> Find a user
-                  </button>
                   {isOwnProfile ? (
-                    /* Own profile: show Edit settings */
-                    <Link className="button button-primary" to="/settings">
-                      Edit settings <ArrowUpRight size={16} />
-                    </Link>
+                    <>
+                      <button className="button button-primary" onClick={() => setFinderOpen((o) => !o)}>
+                        Find a user <Search size={16} />
+                      </button>
+                      <Link className="button" to="/settings">
+                        Edit settings <ArrowUpRight size={16} />
+                      </Link>
+                    </>
                   ) : (
-                    /* Other user: show Start a chat */
-                    <button className="button button-primary" onClick={() => setCreateOpen(true)}>
-                      Start a chat <ArrowUpRight size={16} />
-                    </button>
+                    <>
+                      <button className="button" onClick={() => navigate('/inbox')}>
+                        <Search size={16} /> Find a user
+                      </button>
+                      <button className="button button-primary" onClick={() => setCreateOpen(true)}>
+                        Start a chat <ArrowUpRight size={16} />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
               <ProfileStats profile={profile} />
+
+              {/* Owner-only: user finder */}
+              {isOwnProfile && finderOpen && (
+                <section className="user-finder">
+                  <label>Find a user<input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="search username" /></label>
+                  {users.map((user) => (
+                    <Link to={`/profile/${user.username}`} key={user.id}>{user.username} <ArrowUpRight size={14} /></Link>
+                  ))}
+                </section>
+              )}
+
               <section className="account-list">
-                <div className="section-heading"><h2>{isOwnProfile ? 'Your conversations' : 'Public conversations'}</h2></div>
-                {chats.length ? (
-                  chats.map((chat) => (
-                    /* Conversation click → private chat (/inbox/:id) */
-                    <Link
-                      className="account-conversation"
-                      to={`/inbox/${chat.id}`}
-                      key={chat.id}
-                    >
-                      <span className="thread-id">CCHAT-{String(chat.id).padStart(3, '0')}</span>
-                      <div className="account-conv-name">
-                        <strong>{displayName(chat.other_participant) || 'Conversation'}</strong>
-                        {isOwnProfile && (
-                          <span className={`pill-badge ${chat.is_public ? 'is-public' : 'is-private'}`}>
-                            {chat.is_public ? 'Public' : 'Private'}
-                          </span>
-                        )}
-                      </div>
-                      <span>{chat.last_message?.text || 'No messages yet.'}</span>
-                      <ChevronRight size={16} />
-                    </Link>
-                  ))
-                ) : (
-                  <div className="account-empty-state">
-                    <p>{isOwnProfile ? "You haven't started a thread yet." : "No public conversations yet."}</p>
-                    {isOwnProfile && (
-                      <button className="button button-primary" onClick={() => setCreateOpen(true)}>
-                        Start a thread <ArrowUpRight size={16} />
-                      </button>
-                    )}
+                <div className="section-heading">
+                  <div>
+                    <span className="section-kicker">
+                      {isOwnProfile ? 'Your activity' : 'Public activity'}
+                    </span>
+                    <h2>{isOwnProfile
+                      ? (activeTab === 'conversations' ? 'Your conversations' : 'Bookmarks')
+                      : 'Public conversations'}
+                    </h2>
                   </div>
+                  {/* Owner-only: tabs */}
+                  {isOwnProfile && (
+                    <div className="account-tabs">
+                      <button
+                        type="button"
+                        className={`account-tab ${activeTab === 'conversations' ? 'is-active' : ''}`}
+                        onClick={() => setActiveTab('conversations')}
+                      >
+                        Conversations ({chats.length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`account-tab ${activeTab === 'bookmarks' ? 'is-active' : ''}`}
+                        onClick={() => setActiveTab('bookmarks')}
+                      >
+                        <Bookmark size={13} style={{ marginRight: 4, verticalAlign: -1 }} />
+                        Bookmarks ({bookmarks.length})
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Conversations tab (also the only tab for non-owners) */}
+                {(!isOwnProfile || activeTab === 'conversations') && (
+                  chats.length ? (
+                    chats.map((chat) => (
+                      <Link
+                        className="account-conversation"
+                        to={`/inbox/${chat.id}`}
+                        key={chat.id}
+                      >
+                        <span className="thread-id">CCHAT-{String(chat.id).padStart(3, '0')}</span>
+                        <div className="account-conv-name">
+                          <strong>{displayName(chat.other_participant) || 'Conversation'}</strong>
+                          {isOwnProfile && (
+                            <span className={`pill-badge ${chat.is_public ? 'is-public' : 'is-private'}`}>
+                              {chat.is_public ? 'Public' : 'Private'}
+                            </span>
+                          )}
+                        </div>
+                        <span>{chat.last_message?.text || 'No messages yet.'}</span>
+                        <ChevronRight size={16} />
+                      </Link>
+                    ))
+                  ) : (
+                    <div className="account-empty-state">
+                      <p>{isOwnProfile ? "You haven't started a thread yet." : "No public conversations yet."}</p>
+                      {isOwnProfile && (
+                        <button className="button button-primary" onClick={() => setCreateOpen(true)}>
+                          Start a thread <ArrowUpRight size={16} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                )}
+
+                {/* Bookmarks tab — owner only */}
+                {isOwnProfile && activeTab === 'bookmarks' && (
+                  bookmarks.length ? (
+                    bookmarks.map((conversation) => (
+                      <Link
+                        className="account-conversation"
+                        to={conversation.is_public ? `/chat/${conversation.id}` : `/inbox/${conversation.id}`}
+                        key={conversation.id}
+                      >
+                        <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
+                        <div className="account-conv-name">
+                          <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
+                          <span className={`pill-badge ${conversation.is_public ? 'is-public' : 'is-private'}`}>
+                            {conversation.is_public ? 'Public' : 'Private'}
+                          </span>
+                        </div>
+                        <span>{conversation.last_message?.text || 'No messages yet.'}</span>
+                        <ChevronRight size={16} />
+                      </Link>
+                    ))
+                  ) : (
+                    <div className="account-empty-state">
+                      <p>You haven't bookmarked any conversations yet.</p>
+                      <Link className="button button-primary" to="/explore">
+                        Explore topics <ArrowUpRight size={16} />
+                      </Link>
+                    </div>
+                  )
                 )}
               </section>
             </>
@@ -821,152 +917,11 @@ function ProfilePage() {
   );
 }
 
-/* ─── ACCOUNT/MESSAGES PAGE: /messages (logged-in user's hub) ─── */
-function AccountPage() {
-  const navigate = useNavigate();
-  const [profile, setProfile] = useState(null);
-  const [conversations, setConversations] = useState([]);
-  const [bookmarks, setBookmarks] = useState([]);
-  const [activeTab, setActiveTab] = useState('conversations');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [users, setUsers] = useState([]);
-  const [finderOpen, setFinderOpen] = useState(false);
-
-  useEffect(() => {
-    if (!token()) { navigate('/login?next=%2Fmessages'); return; }
-    Promise.all([
-      axios.get('/api/profile/', authConfig()),
-      axios.get('/api/conversations/', authConfig()),
-      axios.get('/api/bookmarks/', authConfig()),
-    ]).then(([p, c, b]) => {
-      setProfile(p.data);
-      setConversations(c.data || []);
-      setBookmarks(b.data || []);
-    });
-  }, [navigate]);
-
-  useEffect(() => {
-    if (!query.trim()) { setUsers([]); return; }
-    const timer = setTimeout(async () => {
-      const response = await axios.get(`/api/search/users/?q=${encodeURIComponent(query.trim())}`, authConfig());
-      setUsers(response.data || []);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  if (!token()) return null;
-
-  return (
-    <div className="app-shell">
-      <Header dark={false} onToggle={() => {}} />
-      <main className="account-page account-room container">
-        <div className="account-profile-head">
-          <div className="account-profile-copy">
-            <span className="eyebrow">Your room</span>
-            <h1>{profile?.username || sessionUser()?.username || 'Account'}.</h1>
-            <p className={`account-profile-bio ${!profile?.bio ? 'is-fallback' : ''}`}>
-              {profile?.bio || 'Your private conversations, in one place.'}
-            </p>
-          </div>
-          <span className="account-profile-mark" aria-hidden="true">{(profile?.username || sessionUser()?.username || 'A').slice(0, 1).toUpperCase()}</span>
-        </div>
-        {profile && <ProfileStats profile={profile} className="account-stats" />}
-        <div className="account-actions account-page-actions">
-          <button className="button button-primary" onClick={() => setFinderOpen((open) => !open)}>Find a user <Search size={16} /></button>
-          <Link className="button" to="/settings">Edit settings <ArrowUpRight size={16} /></Link>
-        </div>
-        {finderOpen && (
-          <section className="user-finder">
-            <label>Find a user<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="search username" /></label>
-            {users.map((user) => (
-              /* User search result → profile page */
-              <Link to={`/profile/${user.username}`} key={user.id}>{user.username} <ArrowUpRight size={14} /></Link>
-            ))}
-          </section>
-        )}
-        <section className="account-list">
-          <div className="section-heading">
-            <div>
-              <span className="section-kicker">Your activity</span>
-              <h2>{activeTab === 'conversations' ? 'Your conversations' : 'Bookmarks'}</h2>
-            </div>
-            <div className="account-tabs">
-              <button
-                type="button"
-                className={`account-tab ${activeTab === 'conversations' ? 'is-active' : ''}`}
-                onClick={() => setActiveTab('conversations')}
-              >
-                Conversations ({conversations.length})
-              </button>
-              <button
-                type="button"
-                className={`account-tab ${activeTab === 'bookmarks' ? 'is-active' : ''}`}
-                onClick={() => setActiveTab('bookmarks')}
-              >
-                <Bookmark size={13} style={{ marginRight: 4, verticalAlign: -1 }} />
-                Bookmarks ({bookmarks.length})
-              </button>
-            </div>
-          </div>
-
-          {activeTab === 'conversations' ? (
-            conversations.length ? (
-              conversations.map((conversation) => (
-                /* Conversation click → private chat */
-                <Link className="account-conversation" to={`/inbox/${conversation.id}`} key={conversation.id}>
-                  <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
-                  <div className="account-conv-name">
-                    <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
-                    <span className={`pill-badge ${conversation.is_public ? 'is-public' : 'is-private'}`}>
-                      {conversation.is_public ? 'Public' : 'Private'}
-                    </span>
-                  </div>
-                  <span>{conversation.last_message?.text || 'No messages yet.'}</span>
-                  <ChevronRight size={16} />
-                </Link>
-              ))
-            ) : (
-              <div className="account-empty-state">
-                <p>You haven't started a thread yet.</p>
-                <button className="button button-primary" onClick={() => setCreateOpen(true)}>
-                  Start a thread <ArrowUpRight size={16} />
-                </button>
-              </div>
-            )
-          ) : (
-            bookmarks.length ? (
-              bookmarks.map((conversation) => (
-                <Link
-                  className="account-conversation"
-                  to={conversation.is_public ? `/chat/${conversation.id}` : `/inbox/${conversation.id}`}
-                  key={conversation.id}
-                >
-                  <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
-                  <div className="account-conv-name">
-                    <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
-                    <span className={`pill-badge ${conversation.is_public ? 'is-public' : 'is-private'}`}>
-                      {conversation.is_public ? 'Public' : 'Private'}
-                    </span>
-                  </div>
-                  <span>{conversation.last_message?.text || 'No messages yet.'}</span>
-                  <ChevronRight size={16} />
-                </Link>
-              ))
-            ) : (
-              <div className="account-empty-state">
-                <p>You haven't bookmarked any conversations yet.</p>
-                <Link className="button button-primary" to="/explore">
-                  Explore topics <ArrowUpRight size={16} />
-                </Link>
-              </div>
-            )
-          )}
-        </section>
-      </main>
-      {createOpen && <CreateThreadModal onClose={() => setCreateOpen(false)} />}
-    </div>
-  );
+/* ─── /messages redirect: sends old bookmarks to the owner's profile ─── */
+function MessagesRedirect() {
+  const user = sessionUser();
+  if (!user?.username) return <Navigate to="/login" replace />;
+  return <Navigate to={`/profile/${user.username}`} replace />;
 }
 
 function SponsorshipAdminPage() {
@@ -1313,8 +1268,8 @@ export default function App() {
         <Route path="/inbox" element={<InboxPage />} />
         {/* Private chat: individual private conversation */}
         <Route path="/inbox/:id" element={<PrivateChatPage />} />
-        {/* /messages aliases */}
-        <Route path="/messages" element={<AccountPage />} />
+        {/* /messages: redirect to own profile; /messages/:id stays as private chat alias */}
+        <Route path="/messages" element={<MessagesRedirect />} />
         <Route path="/messages/:id" element={<PrivateChatPage />} />
         {/* Profile page */}
         <Route path="/profile/:username" element={<ProfilePage />} />
