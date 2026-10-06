@@ -143,12 +143,23 @@ def google_login(request):
         first_name = idinfo.get('given_name', '')
         last_name = idinfo.get('family_name', '')
 
-        # Find or create user
-        user, created = User.objects.get_or_create(email=email, defaults={
-            'username': email.split('@')[0],
-            'first_name': first_name,
-            'last_name': last_name
-        })
+        # Find by email first. If the preferred Google username is already
+        # taken by another account, add a short numeric suffix instead of
+        # failing with auth_user.username's unique constraint.
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            base_username = ''.join(char for char in email.split('@')[0].lower() if char.isalnum() or char in '._-')[:135] or 'google-user'
+            username = base_username
+            suffix = 2
+            while User.objects.filter(username=username).exists():
+                username = f'{base_username[:(150 - len(str(suffix)))]}{suffix}'
+                suffix += 1
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+            )
         
         # Ensure profile exists (signal should have created it, but safe check)
         if not hasattr(user, 'profile'):
@@ -343,10 +354,15 @@ def create_sponsorship_request(request):
         return Response({'error': 'Staff only'}, status=status.HTTP_403_FORBIDDEN)
     conv_id = request.data.get('conversation_id')
     sponsor_name = request.data.get('sponsor_name')
-    sponsor_text = request.data.get('sponsor_text')
+    sponsor_text = request.data.get('sponsor_text') or request.data.get('sponsor_description') or ''
+    sponsor_description = request.data.get('sponsor_description') or sponsor_text
+    message_id = request.data.get('message_id') or request.data.get('attached_message_id')
     if not conv_id or not sponsor_name:
         return Response({'error': 'conversation_id and sponsor_name required'}, status=status.HTTP_400_BAD_REQUEST)
     conversation = get_object_or_404(Conversation, id=conv_id, is_removed=False)
+    attached_message = None
+    if message_id:
+        attached_message = get_object_or_404(Message, id=message_id, conversation=conversation, is_removed=False)
     participants = list(conversation.participants.all()[:2])
     if len(participants) != 2:
         return Response({'error': 'Conversation must have exactly 2 participants for sponsorships'}, status=status.HTTP_400_BAD_REQUEST)
@@ -361,7 +377,10 @@ def create_sponsorship_request(request):
     sr = SponsorshipRequest.objects.create(
         conversation=conversation,
         sponsor_name=sponsor_name,
-        sponsor_text=sponsor_text or '',
+        sponsor_text=sponsor_text[:200],
+        sponsor_description=sponsor_description[:5000],
+        sponsor_logo=request.FILES.get('sponsor_logo') or request.FILES.get('logo'),
+        attached_message=attached_message,
         user1=participants[0],
         user2=participants[1]
     )
@@ -373,14 +392,14 @@ def create_sponsorship_request(request):
             f'chat_{conversation.id}',
             {
                 'type': 'sponsorship_update',
-                'sponsorship': SponsorshipRequestSerializer(sr).data,
+                'sponsorship': SponsorshipRequestSerializer(sr, context={'request': request}).data,
                 'chatId': conversation.id
             }
         )
     except Exception:
         pass
 
-    return Response(SponsorshipRequestSerializer(sr).data, status=status.HTTP_201_CREATED)
+    return Response(SponsorshipRequestSerializer(sr, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET'])
@@ -394,7 +413,7 @@ def list_sponsorship_requests(request):
         qs = qs.filter(conversation_id=conversation_id)
     data = []
     for s in qs:
-        d = SponsorshipRequestSerializer(s).data
+        d = SponsorshipRequestSerializer(s, context={'request': request}).data
         d['status'] = s.status
         data.append(d)
     return Response(data)
@@ -445,6 +464,40 @@ def review_verification_request(request, profile_id):
     profile.verification_reviewed_at = timezone.now()
     profile.save(update_fields=['verification_status', 'verification_reviewed_by', 'verification_reviewed_at'])
     return Response({'status': profile.verification_status})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def moderation_dashboard(request):
+    """Staff dashboard summary and recent activity."""
+    if not request.user.is_staff:
+        return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+    now = timezone.now()
+    recent_users = User.objects.filter(is_active=True).select_related('profile').order_by('-date_joined')[:8]
+    recent_conversations = Conversation.objects.filter(is_removed=False).prefetch_related('participants', 'messages').order_by('-updated_at')[:8]
+    return Response({
+        'stats': {
+            'users': User.objects.filter(is_active=True).count(),
+            'conversations': Conversation.objects.filter(is_removed=False).count(),
+            'messages': Message.objects.filter(is_removed=False).count(),
+            'active_users_7d': User.objects.filter(is_active=True, last_login__gte=now - timedelta(days=7)).count(),
+            'pending_reports': Report.objects.filter(status='PENDING').count(),
+            'pending_verification': Profile.objects.filter(verification_status='PENDING').count(),
+            'pending_sponsorships': SponsorshipRequest.objects.filter(user1_accepted__isnull=True, user2_accepted__isnull=True).count(),
+        },
+        'recent_users': [{
+            'id': user.id,
+            'username': user.username,
+            'joined_at': user.date_joined,
+            'verification_status': getattr(getattr(user, 'profile', None), 'verification_status', 'UNVERIFIED'),
+        } for user in recent_users],
+        'recent_conversations': [{
+            'id': conversation.id,
+            'participants': list(conversation.participants.values_list('username', flat=True)),
+            'message_count': conversation.messages.filter(is_removed=False).count(),
+            'updated_at': conversation.updated_at,
+        } for conversation in recent_conversations],
+    })
 
 
 # ==================== Follow Views ====================

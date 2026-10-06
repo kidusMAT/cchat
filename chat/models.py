@@ -11,6 +11,7 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     bio = models.TextField(max_length=500, blank=True)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
+    avatar_seed = models.CharField(max_length=80, blank=True, default='')
     rank = models.IntegerField(default=0)
     followers_count = models.IntegerField(default=0)
     following_count = models.IntegerField(default=0)
@@ -36,9 +37,12 @@ class Profile(models.Model):
 
     def get_avatar_url(self):
         """Get avatar URL or generate default"""
+        if self.avatar_seed:
+            return f"https://api.dicebear.com/7.x/avataaars/svg?seed={self.avatar_seed}"
         if self.avatar:
             return self.avatar.url
-        return f"https://api.dicebear.com/7.x/avataaars/svg?seed={self.user.username}"
+        seed = self.user.username
+        return f"https://api.dicebear.com/7.x/avataaars/svg?seed={seed}"
 
 
 @receiver(post_save, sender=User)
@@ -377,6 +381,9 @@ class SponsorshipRequest(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='sponsorships')
     sponsor_name = models.CharField(max_length=100)
     sponsor_text = models.CharField(max_length=200)
+    sponsor_description = models.TextField(blank=True, default='')
+    sponsor_logo = models.FileField(upload_to='sponsor_logos/', null=True, blank=True)
+    attached_message = models.ForeignKey('Message', null=True, blank=True, on_delete=models.SET_NULL, related_name='sponsorship_attachments')
     user1 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sponsorship_requests_as_user1', null=True)
     user2 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sponsorship_requests_as_user2', null=True)
     # Allow null to represent "not yet responded". Consumers set True/False.

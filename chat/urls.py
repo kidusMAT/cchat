@@ -6,6 +6,7 @@ urlpatterns = [
     path('report/conversation/<int:target_id>/', views.create_report, {'target_type': 'conversation'}, name='report_conversation'),
     path('report/message/<int:target_id>/', views.create_report, {'target_type': 'message'}, name='report_message'),
     path('moderation/reports/', views.moderation_reports, name='moderation_reports'),
+    path('moderation/dashboard/', views.moderation_dashboard, name='moderation_dashboard'),
     path('moderation/sponsorships/create/', views.create_sponsorship_request, name='create_sponsorship_request'),
     path('moderation/sponsorships/', views.list_sponsorship_requests, name='list_sponsorship_requests'),
     path('moderation/reports/<int:report_id>/action/', views.moderate_report, name='moderate_report'),

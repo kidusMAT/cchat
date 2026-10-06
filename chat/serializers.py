@@ -42,7 +42,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = [
-            'id', 'username', 'is_staff', 'bio', 'avatar', 'avatar_url', 'rank',
+            'id', 'username', 'is_staff', 'bio', 'avatar', 'avatar_seed', 'avatar_url', 'rank',
             'followers_count', 'following_count', 'posts_count',
             'reactions_received',
             'default_conversations_public',
@@ -213,10 +213,25 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class SponsorshipRequestSerializer(serializers.ModelSerializer):
     """Serializer for SponsorshipRequest model"""
+    sponsor_logo = serializers.SerializerMethodField()
+    attached_message_id = serializers.IntegerField(read_only=True)
+    attached_message_link = serializers.SerializerMethodField()
+    status = serializers.ReadOnlyField()
     class Meta:
         model = SponsorshipRequest
-        fields = ['id', 'conversation', 'sponsor_name', 'sponsor_text', 'user1', 'user2', 'user1_accepted', 'user2_accepted', 'created_at']
+        fields = ['id', 'conversation', 'sponsor_name', 'sponsor_text', 'sponsor_description', 'sponsor_logo', 'attached_message_id', 'attached_message_link', 'user1', 'user2', 'user1_accepted', 'user2_accepted', 'status', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+    def get_sponsor_logo(self, obj):
+        if not obj.sponsor_logo:
+            return None
+        request = self.context.get('request')
+        return request.build_absolute_uri(obj.sponsor_logo.url) if request else obj.sponsor_logo.url
+
+    def get_attached_message_link(self, obj):
+        if not obj.attached_message_id:
+            return None
+        return f'/chat/{obj.conversation_id}?message={obj.attached_message_id}'
 
 
 class ConversationSerializer(serializers.ModelSerializer):
@@ -240,7 +255,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_sponsorships(self, obj):
-        return SponsorshipRequestSerializer(obj.sponsorships.all(), many=True).data
+        return SponsorshipRequestSerializer(obj.sponsorships.all(), many=True, context=self.context).data
 
     def get_is_bookmarked(self, obj):
         request = self.context.get('request')

@@ -1,7 +1,8 @@
 /* Hallmark · macrostructure: Marquee + live index · tone: tactile editorial · anchor hue: hot-pink */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserRouter as Router, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Bookmark, ChevronRight, Eye, EyeOff, Flame, Heart, LogOut, Mic, Moon, Paperclip, Pause, Play, Search, Send, Skull, Sparkles, Square, Sun, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Bookmark, ChevronRight, Eye, EyeOff, Flame, Flag, Heart, LogOut, Menu, Mic, Moon, Paperclip, Pause, Play, Search, Send, Skull, Sparkles, Square, Sun, Trash2, Users, X } from 'lucide-react';
+import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import SettingsPage from './Settings.jsx';
 import './index.css';
@@ -77,6 +78,14 @@ function sessionUser() {
   try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; }
 }
 function token() { return localStorage.getItem('access'); }
+const READING_HISTORY_KEY = 'cchat_reading_history';
+function readReadingHistory() { try { return JSON.parse(localStorage.getItem(READING_HISTORY_KEY) || '{}'); } catch { return {}; } }
+function saveReadingPosition(conversationId, messageId) {
+  if (!messageId) return;
+  const history = readReadingHistory();
+  history[String(conversationId)] = { messageId: String(messageId), updatedAt: Date.now() };
+  localStorage.setItem(READING_HISTORY_KEY, JSON.stringify(history));
+}
 function useDarkMode() {
   const [dark, setDark] = useState(() => localStorage.getItem('cchat_theme') === 'dark');
   const toggle = () => setDark((current) => {
@@ -113,6 +122,7 @@ if (!window.__cchatAuthInterceptor) {
 function initials(name) { return name && name !== 'Anonymous' ? name.slice(0, 2).toUpperCase() : '?'; }
 function relativeTime(value) { if (!value) return 'active'; const date = new Date(value); if (Number.isNaN(date.getTime())) return 'active'; const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000)); if (minutes < 1) return 'now'; if (minutes < 60) return `${minutes}m ago`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours}h ago`; return `${Math.floor(hours / 24)}d ago`; }
 function displayName(participant) { return participant?.username || 'Anonymous'; }
+function resolveMediaUrl(value) { if (!value) return ''; return /^https?:\/\//i.test(value) ? value : `${API_URL}${value.startsWith('/') ? '' : '/'}${value}`; }
 function memberSince(value) { if (!value) return 'member since unknown'; const date = new Date(value); return Number.isNaN(date.getTime()) ? 'member since unknown' : `member since ${date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`; }
 function participantTone(index, participant) { if (participant?.is_anonymous) return 'black'; return ['pink', 'blue', 'yellow', 'green'][index % 4]; }
 
@@ -225,8 +235,8 @@ function Avatar({ person, small = false, index = 0 }) {
   const isAnon = typeof person === 'object' && (person?.is_anonymous || person?.is_public === false);
   const name = typeof person === 'string' ? person : displayName(person);
   const image = isAnon
-    ? (person?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`)
-    : (typeof person === 'object' ? (person?.avatar_url || '') : '');
+    ? resolveMediaUrl(person?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`)
+    : (typeof person === 'object' ? resolveMediaUrl(person?.avatar_url || '') : '');
   return <span className={`avatar avatar-${participantTone(index, typeof person === 'string' ? null : person)} ${small ? 'avatar-small' : ''}`} aria-label={`${name} avatar`}>{image ? <img src={image} alt="" /> : initials(name)}</span>;
 }
 function Logo() { return <Link to="/" className="logo" aria-label="CCHAT home">C<span>CHAT</span><i>.</i></Link>; }
@@ -235,10 +245,12 @@ function ThemeToggle({ dark, onToggle }) { return <button className="theme-toggl
 function Header({ dark, onToggle }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(sessionUser());
+  const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => { const sync = () => setUser(sessionUser()); window.addEventListener('storage', sync); window.addEventListener('cchat:auth-expired', sync); return () => { window.removeEventListener('storage', sync); window.removeEventListener('cchat:auth-expired', sync); }; }, []);
   const logout = async () => { try { if (token()) await axios.post('/api/auth/logout/', {}, authConfig()); } catch { /* local cleanup still matters */ } finally { clearSession(); navigate('/'); } };
-  const openSearch = () => window.dispatchEvent(new Event('cchat:open-search'));
-  return <header className="site-header"><Logo /><div className="header-actions"><button className="icon-button search-toggle" onClick={openSearch} aria-label="Search threads"><Search size={18} /></button><Link className="header-link explore-link" to="/explore">Explore topics</Link><ThemeToggle dark={dark} onToggle={onToggle} />{user ? <><Link className="login-link account-link" to={`/profile/${encodeURIComponent(user.username)}`}>@{user.username} <ArrowUpRight size={15} /></Link><Link className="icon-button" to="/inbox" aria-label="Inbox"><Users size={17} /></Link><button className="icon-button" onClick={logout} aria-label="Log out"><LogOut size={17} /></button></> : <Link className="login-link" to="/login">Log in <ArrowUpRight size={15} /></Link>}</div></header>;
+  const openSearch = () => { setMenuOpen(false); window.dispatchEvent(new Event('cchat:open-search')); };
+  const closeMenu = () => setMenuOpen(false);
+  return <header className="site-header"><Logo /><div className="header-actions"><button className="icon-button search-toggle" onClick={openSearch} aria-label="Search threads"><Search size={18} /></button><Link className="header-link explore-link" to="/explore">Explore topics</Link><ThemeToggle dark={dark} onToggle={onToggle} />{user ? <><Link className="login-link account-link" to={`/profile/${encodeURIComponent(user.username)}`}>@{user.username} <ArrowUpRight size={15} /></Link><Link className="icon-button" to="/inbox" aria-label="Inbox"><Users size={17} /></Link><button className="icon-button" onClick={logout} aria-label="Log out"><LogOut size={17} /></button></> : <Link className="login-link" to="/login">Log in <ArrowUpRight size={15} /></Link>}</div><button type="button" className="mobile-menu-toggle" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={menuOpen}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>{menuOpen && <nav className="mobile-menu-panel" aria-label="Mobile navigation"><button type="button" onClick={openSearch}><Search size={16} /> Search threads</button><Link to="/explore" onClick={closeMenu}><Sparkles size={16} /> Explore topics</Link><button type="button" onClick={onToggle}><ThemeToggle dark={dark} onToggle={() => {}} /><span>Switch to {dark ? 'light' : 'dark'} mode</span></button>{user ? <><Link to={`/profile/${encodeURIComponent(user.username)}`} onClick={closeMenu}><ArrowUpRight size={16} /> @{user.username}</Link><Link to="/inbox" onClick={closeMenu}><Users size={16} /> Inbox</Link><button type="button" onClick={() => { closeMenu(); logout(); }}><LogOut size={16} /> Log out</button></> : <Link to="/login" onClick={closeMenu}><ArrowUpRight size={16} /> Log in</Link>}</nav>}</header>;
 }
 
 function InlineSearch({ open, onClose }) {
@@ -424,7 +436,37 @@ function DeleteMessagesModal({ count, onCancel, onConfirm, deleting }) {
   );
 }
 
-function Message({ message, currentUser, participants = [], onReact, onDelete, selectionMode, selected, onToggleSelect, isPublic: conversationIsPublic }) {
+const REPORT_REASONS = [
+  ['harassment', 'Harassment'],
+  ['doxxing', 'Doxxing or personal information'],
+  ['minor', 'Involves a minor'],
+  ['non_consensual', 'Non-consensual sharing'],
+  ['spam', 'Spam'],
+  ['other', 'Other'],
+];
+
+function ReportModal({ target, onClose, onSubmit, submitting }) {
+  const [reason, setReason] = useState('harassment');
+  const [detail, setDetail] = useState('');
+  const submit = (event) => { event.preventDefault(); onSubmit({ reason, detail }); };
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="create-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
+        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        <span className="eyebrow"><Flag size={14} /> Report {target.type}</span>
+        <h2 id="report-title">Help keep CCHAT healthy.</h2>
+        <p className="report-intro">Reports are reviewed by the moderation team. Please choose the closest reason and add context if it helps.</p>
+        <form onSubmit={submit} className="auth-form">
+          <label>Reason<select value={reason} onChange={(event) => setReason(event.target.value)}>{REPORT_REASONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <label>Details (optional)<textarea value={detail} maxLength={4000} onChange={(event) => setDetail(event.target.value)} placeholder="What should moderators know?" /></label>
+          <div className="report-modal-actions"><button type="button" className="button" onClick={onClose} disabled={submitting}>Cancel</button><button className="button button-primary" disabled={submitting}>{submitting ? 'Sending…' : 'Submit report'} <Flag size={15} /></button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function Message({ message, historyKey, currentUser, participants = [], onReact, onDelete, onReport, selectionMode, selected, onToggleSelect, isPublic: conversationIsPublic }) {
   const senderId = message.sender ?? message.sender_id;
   let participantIndex = participants.findIndex((p) => p.id && String(p.id) === String(senderId));
   if (participantIndex < 0 && message.sender_username) {
@@ -463,7 +505,7 @@ function Message({ message, currentUser, participants = [], onReact, onDelete, s
   const bgStyle = getMessageBgStyle(message);
 
   return (
-    <div className={`message-row ${visualRight ? 'message-mine' : 'message-other'} ${selected ? 'is-selected' : ''} ${selectionMode ? 'is-selectable' : ''}`} onClick={() => { if (selectionMode && isMine) onToggleSelect(message.id); }} aria-selected={selectionMode ? selected : undefined}>
+    <div className={`message-row ${visualRight ? 'message-mine' : 'message-other'} ${selected ? 'is-selected' : ''} ${selectionMode ? 'is-selectable' : ''}`} data-message-id={historyKey} onClick={() => { if (selectionMode && isMine) onToggleSelect(message.id); }} aria-selected={selectionMode ? selected : undefined}>
       <Avatar person={sender || senderName} small index={participantIndex >= 0 ? participantIndex : (visualRight ? 1 : 0)} />
       <div className="message-body">
         {isMine && selectionMode && <span className={`message-selection-mark ${selected ? 'is-selected' : ''}`} aria-hidden="true">{selected ? '✓' : ''}</span>}
@@ -498,6 +540,7 @@ function Message({ message, currentUser, participants = [], onReact, onDelete, s
               <Trash2 size={14} />
             </button>
           )}
+          {!isMine && onReport && <button type="button" className="message-report-button" onClick={(e) => { e.stopPropagation(); onReport(message.id); }} aria-label="Report message" title="Report message"><Flag size={14} /></button>}
           <button
             type="button"
             className={`reaction-btn reaction-flame ${message.user_reaction === 'like' ? 'is-active' : ''}`}
@@ -562,13 +605,81 @@ function EyeToggle({ isPublic, onToggle, disabled }) {
 }
 
 function ChatPage() {
-  const { id } = useParams(); const navigate = useNavigate(); const [dark, setDark] = useDarkMode(); const [conversation, setConversation] = useState(null); const [messages, setMessages] = useState([]); const [currentUser, setCurrentUser] = useState(sessionUser()); const [participantChats, setParticipantChats] = useState({}); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [input, setInput] = useState(''); const [floating, setFloating] = useState([]); const [selectionMode, setSelectionMode] = useState(false); const [selectedMessageIds, setSelectedMessageIds] = useState([]); const [deleteRequest, setDeleteRequest] = useState(null); const [deleting, setDeleting] = useState(false); const socketRef = useRef(null); const streamRef = useRef(null); const moving = useRef(false); const pullRef = useRef({ amount: 0, direction: 0 });
+  const { id } = useParams(); const navigate = useNavigate(); const [dark, setDark] = useDarkMode(); const [conversation, setConversation] = useState(null); const [messages, setMessages] = useState([]); const [currentUser, setCurrentUser] = useState(sessionUser()); const [participantChats, setParticipantChats] = useState({}); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [input, setInput] = useState(''); const [floating, setFloating] = useState([]); const [selectionMode, setSelectionMode] = useState(false); const [selectedMessageIds, setSelectedMessageIds] = useState([]); const [deleteRequest, setDeleteRequest] = useState(null); const [deleting, setDeleting] = useState(false); const [reportTarget, setReportTarget] = useState(null); const [reporting, setReporting] = useState(false); const [resumeMessageId, setResumeMessageId] = useState(null); const resumeApplied = useRef(false); const socketRef = useRef(null); const streamRef = useRef(null); const moving = useRef(false); const pullRef = useRef({ amount: 0, direction: 0 }); const touchStartRef = useRef(null);
   const participants = conversation?.participants || [];
   const viewerParticipant = participants.find((p) => currentUser && String(p.id) === String(currentUser.id));
 
+  useEffect(() => {
+    const saved = readReadingHistory()[String(id)];
+    const linkedMessage = new URLSearchParams(window.location.search).get('message');
+    setResumeMessageId(linkedMessage || saved?.messageId || null);
+    resumeApplied.current = false;
+  }, [id]);
+
+  useEffect(() => {
+    if (!messages.length || !resumeMessageId || resumeApplied.current) return undefined;
+    const timer = window.setTimeout(() => {
+      const target = Array.from(streamRef.current?.querySelectorAll('[data-message-id]') || [])
+        .find((element) => element.dataset.messageId === String(resumeMessageId));
+      if (target) {
+        target.scrollIntoView({ block: 'center', behavior: 'auto' });
+        resumeApplied.current = true;
+      }
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [messages, resumeMessageId]);
+
+  useEffect(() => {
+    let frame = 0;
+    const rememberPosition = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const stream = streamRef.current;
+        if (!stream) return;
+        const bounds = stream.getBoundingClientRect();
+        const threshold = stream.scrollHeight > stream.clientHeight + 16 ? bounds.top + 96 : 180;
+        const visible = Array.from(stream.querySelectorAll('[data-message-id]'))
+          .filter((element) => element.getBoundingClientRect().top <= threshold)
+          .pop();
+        if (visible?.dataset.messageId) saveReadingPosition(id, visible.dataset.messageId);
+      });
+    };
+    window.addEventListener('scroll', rememberPosition, { passive: true });
+    streamRef.current?.addEventListener('scroll', rememberPosition, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', rememberPosition);
+      streamRef.current?.removeEventListener('scroll', rememberPosition);
+    };
+  }, [id, messages.length]);
+
   const ids = useMemo(() => { try { return JSON.parse(localStorage.getItem('recommended_chats_ids') || '[]').map(Number); } catch { return []; } }, [conversation]);
-  const move = (delta) => { if (moving.current || ids.length < 2) return; const index = ids.indexOf(Number(id)); const next = ids[(index < 0 ? 0 : index + delta + ids.length) % ids.length]; if (!next || next === Number(id)) return; moving.current = true; const el = streamRef.current; if (el) el.style.transform = `translateY(${delta > 0 ? -100 : 100}px)`; setTimeout(() => navigate(`/chat/${next}`), 220); setTimeout(() => { moving.current = false; }, 650); };
-  useEffect(() => { let settleTimer; const onWheel = (event) => { const el = streamRef.current; if (!el || moving.current) return; const hasInternalScroll = el.scrollHeight > el.clientHeight + 16; const atBottom = hasInternalScroll ? (el.scrollHeight - el.scrollTop <= el.clientHeight + 8) : (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24); const atTop = hasInternalScroll ? (el.scrollTop <= 8) : (window.scrollY <= 8); const direction = event.deltaY > 0 && atBottom ? 1 : event.deltaY < 0 && atTop ? -1 : 0; if (!direction) { pullRef.current = { amount: 0, direction: 0 }; el.style.transform = 'translateY(0)'; return; } const state = pullRef.current.direction === direction ? pullRef.current : { amount: 0, direction }; state.amount = Math.min(420, state.amount + Math.abs(event.deltaY) * 0.32); pullRef.current = state; el.style.transform = `translateY(${direction * -Math.min(120, state.amount * 0.38)}px)`; clearTimeout(settleTimer); settleTimer = setTimeout(() => { if (!moving.current && streamRef.current) { streamRef.current.style.transform = 'translateY(0)'; pullRef.current = { amount: 0, direction: 0 }; } }, 140); if (state.amount > 380) { pullRef.current = { amount: 0, direction: 0 }; move(direction); } }; window.addEventListener('wheel', onWheel, { passive: true }); return () => { clearTimeout(settleTimer); window.removeEventListener('wheel', onWheel); }; }, [id, ids]);
+  const move = (delta) => { if (moving.current || ids.length < 2) return; const index = ids.indexOf(Number(id)); const next = ids[(index < 0 ? 0 : index + delta + ids.length) % ids.length]; if (!next || next === Number(id)) return; moving.current = true; const el = streamRef.current; if (el) el.style.transform = `translateY(${delta > 0 ? -100 : 100}px)`; setTimeout(() => navigate(`/chat/${next}`), 180); setTimeout(() => { moving.current = false; }, 560); };
+  useEffect(() => { let settleTimer; const onWheel = (event) => { const el = streamRef.current; if (!el || moving.current) return; const hasInternalScroll = el.scrollHeight > el.clientHeight + 16; const atBottom = hasInternalScroll ? (el.scrollHeight - el.scrollTop <= el.clientHeight + 8) : (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24); const atTop = hasInternalScroll ? (el.scrollTop <= 8) : (window.scrollY <= 8); const direction = event.deltaY > 0 && atBottom ? 1 : event.deltaY < 0 && atTop ? -1 : 0; if (!direction) { pullRef.current = { amount: 0, direction: 0 }; el.style.transform = 'translateY(0)'; return; } const state = pullRef.current.direction === direction ? pullRef.current : { amount: 0, direction }; state.amount = Math.min(380, state.amount + Math.abs(event.deltaY) * 0.34); pullRef.current = state; el.style.transform = `translateY(${direction * -Math.min(120, state.amount * 0.38)}px)`; clearTimeout(settleTimer); settleTimer = setTimeout(() => { if (!moving.current && streamRef.current) { streamRef.current.style.transform = 'translateY(0)'; pullRef.current = { amount: 0, direction: 0 }; } }, 120); if (state.amount > 340) { pullRef.current = { amount: 0, direction: 0 }; move(direction); } }; window.addEventListener('wheel', onWheel, { passive: true }); return () => { clearTimeout(settleTimer); window.removeEventListener('wheel', onWheel); }; }, [id, ids]);
+  useEffect(() => {
+    const onTouchStart = (event) => {
+      if (event.touches.length === 1) touchStartRef.current = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+    };
+    const onTouchEnd = (event) => {
+      const start = touchStartRef.current;
+      touchStartRef.current = null;
+      if (!start || moving.current || !event.changedTouches.length) return;
+      const touch = event.changedTouches[0];
+      const deltaX = start.x - touch.clientX;
+      const deltaY = start.y - touch.clientY;
+      if (Math.abs(deltaY) < 72 || Math.abs(deltaY) <= Math.abs(deltaX)) return;
+      const stream = streamRef.current;
+      if (!stream) return;
+      const hasInternalScroll = stream.scrollHeight > stream.clientHeight + 16;
+      const atBottom = hasInternalScroll ? stream.scrollHeight - stream.scrollTop <= stream.clientHeight + 8 : window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24;
+      const atTop = hasInternalScroll ? stream.scrollTop <= 8 : window.scrollY <= 8;
+      if (deltaY > 0 && atBottom) move(1);
+      if (deltaY < 0 && atTop) move(-1);
+    };
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => { window.removeEventListener('touchstart', onTouchStart); window.removeEventListener('touchend', onTouchEnd); };
+  }, [id, ids]);
   useEffect(() => { let active = true; setLoading(true); setError(''); (async () => { try { const chatResponse = await axios.get(`/api/conversations/${id}/`, authConfig()); if (!active) return; setConversation(chatResponse.data.conversation); setMessages(chatResponse.data.messages || []); if (token()) { try { const profileResponse = await axios.get('/api/profile/', authConfig()); if (active && profileResponse.data) setCurrentUser({ ...sessionUser(), ...profileResponse.data }); } catch {} } } catch (err) { if (active) setError(err.response?.data?.error || 'This conversation is unavailable.'); } finally { if (active) setLoading(false); } })(); return () => { active = false; }; }, [id]);
   useEffect(() => { if (!participants.length) return; let active = true; (async () => { const next = {}; await Promise.all(participants.filter((person) => person.is_public).map(async (person) => { try { if (currentUser && String(currentUser.id) === String(person.id)) { const response = await axios.get('/api/conversations/', authConfig()); next[person.id] = (response.data || []).filter((item) => Number(item.id) !== Number(id)); } else { const response = await axios.get(`/api/profile/${encodeURIComponent(person.username)}/conversations/`, authConfig()); next[person.id] = response.data || []; } } catch { next[person.id] = []; } })); if (active) setParticipantChats(next); })(); return () => { active = false; }; }, [id, participants.length, currentUser?.id]);
   useEffect(() => { const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws'); const query = token() ? `?token=${encodeURIComponent(token())}` : ''; const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`); socket.onmessage = (event) => { const data = JSON.parse(event.data); if (data.type === 'receive_message') setMessages((current) => [...current, { id: data.id, sender: data.sender_id || data.senderId, sender_username: data.sender_username, text: data.text, timestamp: data.timestamp }]); if (data.type === 'message_deleted') setMessages((current) => current.filter((message) => String(message.id) !== String(data.messageId))); if (data.type === 'sponsorship_update' && data.sponsorship) setConversation((current) => ({ ...current, sponsorships: [data.sponsorship] })); }; socketRef.current = socket; return () => { socket.close(); socketRef.current = null; }; }, [id]);
@@ -623,6 +734,7 @@ function ChatPage() {
   };
 
   const voteSponsorship = async (sponsorshipId, accepted) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } const response = await axios.post(`/api/conversations/${id}/sponsorships/${sponsorshipId}/vote/`, { accepted }, authConfig()); setConversation((current) => ({ ...current, sponsorships: (current.sponsorships || []).map((item) => item.id === sponsorshipId ? { ...item, ...response.data } : item) })); };
+  const submitReport = async ({ reason, detail }) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } setReporting(true); try { const targetPath = reportTarget.type === 'message' ? `/api/report/message/${reportTarget.id}/` : `/api/report/conversation/${id}/`; await axios.post(targetPath, { reason, detail }, authConfig()); setReportTarget(null); setError('Report submitted. Thank you for helping keep the room safe.'); } catch (err) { setError(err.response?.data?.error || 'Could not submit this report.'); } finally { setReporting(false); } };
   const send = async (event) => { event.preventDefault(); if (!input.trim()) return; if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } const text = input.trim(); setInput(''); if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: 'send_message', senderId: currentUser?.username, text })); else { try { const response = await axios.post('/api/messages/send/', { conversation_id: id, text }, authConfig()); setMessages((current) => [...current, response.data]); } catch (err) { setError(err.response?.data?.error || 'Message could not be sent.'); } } };
   if (loading) return <div className={`app-shell ${dark ? 'theme-dark' : ''}`}><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="loading-state">Loading conversation…</main></div>;
   if (error || !conversation) return <div className={`app-shell ${dark ? 'theme-dark' : ''}`}><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="empty-state container"><Link to="/" className="back-link"><ArrowLeft size={16} /> Back to feed</Link><h1>{error || 'Conversation unavailable.'}</h1></main></div>;
@@ -674,10 +786,12 @@ function ChatPage() {
               <span className="thread-id">CCHAT-{String(id).padStart(3, '0')}</span>
               <h1>
                 {participants.length ? participants.map((person, index) => (
-                  <span key={person.id || index} className="head-participant">
-                    {index > 0 && <span className="head-sep"> × </span>}
+                  <React.Fragment key={person.id || index}>
+                    {index > 0 && <span className="head-sep" aria-hidden="true">×</span>}
+                    <span className="head-participant">
                     <ParticipantLink person={person}>{displayName(person)}</ParticipantLink>
-                  </span>
+                    </span>
+                  </React.Fragment>
                 )) : 'Public conversation'}
               </h1>
               <p><span className="live-dot" /> {conversation.status || 'ACTIVE'} · {conversation.is_public ? 'public thread' : 'private thread'}</p>
@@ -687,7 +801,7 @@ function ChatPage() {
                 <button type="button" className="selection-close" onClick={() => { setSelectionMode(false); setSelectedMessageIds([]); }} aria-label="Cancel selection">×</button>
                 <strong>{selectedMessageIds.length} selected</strong>
                 <button type="button" className="selection-delete" disabled={!selectedMessageIds.length} onClick={() => requestDeleteMessages(selectedMessageIds)}><Trash2 size={15} /> Delete</button>
-              </> : <button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button>}
+              </> : <><button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button><button type="button" className="report-thread-button" onClick={() => setReportTarget({ type: 'conversation' })} aria-label="Report conversation" title="Report conversation"><Flag size={16} /></button></>}
               <button
                 type="button"
                 className={`icon-button bookmark-button ${conversation?.is_bookmarked ? 'is-saved' : ''}`}
@@ -700,22 +814,29 @@ function ChatPage() {
               </button>
             </div>
           </div>
-          {sponsorship && <div className={`sponsor-banner ${sponsorship.user1_accepted && sponsorship.user2_accepted ? 'sponsor-live' : 'sponsor-pending'}`}><strong>{sponsorship.user1_accepted && sponsorship.user2_accepted ? `Presented by ${sponsorship.sponsor_name}` : `Possible sponsor: ${sponsorship.sponsor_name}`}</strong>{sponsorship.sponsor_text && <span>{sponsorship.sponsor_text}</span>}{viewerParticipant && <div className="sponsor-actions"><button onClick={() => voteSponsorship(sponsorship.id, true)} disabled={(viewerParticipant.id === sponsorship.user1 && sponsorship.user1_accepted) || (viewerParticipant.id === sponsorship.user2 && sponsorship.user2_accepted)}>Accept</button><button onClick={() => voteSponsorship(sponsorship.id, false)}>Decline</button></div>}</div>}
+          {sponsorship && <div className={`sponsor-banner ${sponsorship.user1_accepted && sponsorship.user2_accepted ? 'sponsor-live' : 'sponsor-pending'}`}>{sponsorship.sponsor_logo && <img src={resolveMediaUrl(sponsorship.sponsor_logo)} alt={`${sponsorship.sponsor_name} logo`} className="sponsor-logo" />}<div className="sponsor-copy"><strong>{sponsorship.user1_accepted && sponsorship.user2_accepted ? `Presented by ${sponsorship.sponsor_name}` : `Possible sponsor: ${sponsorship.sponsor_name}`}</strong>{(sponsorship.sponsor_description || sponsorship.sponsor_text) && <span>{sponsorship.sponsor_description || sponsorship.sponsor_text}</span>}{sponsorship.attached_message_link && <Link className="sponsor-message-link" to={sponsorship.attached_message_link}>View attached message <ArrowUpRight size={13} /></Link>}</div>{viewerParticipant && <div className="sponsor-actions"><button onClick={() => voteSponsorship(sponsorship.id, true)} disabled={(viewerParticipant.id === sponsorship.user1 && sponsorship.user1_accepted) || (viewerParticipant.id === sponsorship.user2 && sponsorship.user2_accepted)}>Accept</button><button onClick={() => voteSponsorship(sponsorship.id, false)}>Decline</button></div>}</div>}
           <div className="conversation-stream" ref={streamRef}>
-            {messages.length ? messages.map((message) => (
-              <Message
-                key={message.id || `${message.timestamp}-${message.text}`}
-                message={message}
-                currentUser={currentUser}
-                participants={participants}
-                onReact={reactMessage}
-                onDelete={(messageId) => requestDeleteMessages([messageId])}
-                selectionMode={selectionMode}
-                selected={selectedMessageIds.includes(message.id)}
-                onToggleSelect={(messageId) => setSelectedMessageIds((current) => current.includes(messageId) ? current.filter((value) => value !== messageId) : [...current, messageId])}
-                isPublic={conversation.is_public}
-              />
-            )) : <p className="empty-state">No messages yet. Be the first voice in the room.</p>}
+            {messages.length ? messages.map((message) => {
+              const historyKey = String(message.id || `${message.timestamp}-${message.text}`);
+              return (
+                <React.Fragment key={historyKey}>
+                  {String(resumeMessageId) === historyKey && <div className="reading-history-marker" aria-label="You were here"><span>You were here</span></div>}
+                  <Message
+                    historyKey={historyKey}
+                    message={message}
+                    currentUser={currentUser}
+                    participants={participants}
+                    onReact={reactMessage}
+                    onDelete={(messageId) => requestDeleteMessages([messageId])}
+                    onReport={(messageId) => setReportTarget({ type: 'message', id: messageId })}
+                    selectionMode={selectionMode}
+                    selected={selectedMessageIds.includes(message.id)}
+                    onToggleSelect={(messageId) => setSelectedMessageIds((current) => current.includes(messageId) ? current.filter((value) => value !== messageId) : [...current, messageId])}
+                    isPublic={conversation.is_public}
+                  />
+                </React.Fragment>
+              );
+            }) : <p className="empty-state">No messages yet. Be the first voice in the room.</p>}
             <div className="conversation-end">
               <span>END OF CONVERSATION</span>
               <strong>{ids.length > 1 ? 'Scroll for the next honest thought' : 'You reached the end of this room'} <ArrowUpRight size={16} /></strong>
@@ -753,18 +874,19 @@ function ChatPage() {
         </aside>
       </main>
       {deleteRequest && <DeleteMessagesModal count={deleteRequest.length} onCancel={() => setDeleteRequest(null)} onConfirm={deleteMessages} deleting={deleting} />}
+      {reportTarget && <ReportModal target={reportTarget} onClose={() => setReportTarget(null)} onSubmit={submitReport} submitting={reporting} />}
     </div>
   );
 }
 
 /* ─── INBOX: list of private conversations ─── */
-function PrivateConversationList({ conversations, activeId, loading, dark, onToggle }) {
+function PrivateConversationList({ conversations, activeId, loading, dark, onToggle, onCloseSidebar }) {
   return (
     <aside className="private-inbox-list">
       <div className="private-inbox-list-head">
         <div className="private-inbox-top-actions">
           <Logo />
-          <div className="private-inbox-actions"><ThemeToggle dark={dark} onToggle={onToggle} /><Link to="/" className="back-link"><ArrowLeft size={14} /> Feed</Link></div>
+          <div className="private-inbox-actions"><ThemeToggle dark={dark} onToggle={onToggle} /><Link to="/" className="back-link"><ArrowLeft size={14} /> Feed</Link>{onCloseSidebar && <button type="button" className="private-sidebar-close" onClick={onCloseSidebar} aria-label="Hide conversations"><X size={18} /></button>}</div>
         </div>
         <span className="eyebrow">Private messages</span>
         <h1>Inbox</h1>
@@ -781,6 +903,7 @@ function PrivateConversationList({ conversations, activeId, loading, dark, onTog
                 className={`private-conversation-row ${String(activeId) === String(conversation.id) ? 'is-active' : ''}`}
                 to={`/inbox/${conversation.id}`}
                 key={conversation.id}
+                onClick={onCloseSidebar}
               >
                 <Avatar person={conversation.other_participant || 'Anonymous'} small />
                 <span className="private-conversation-copy">
@@ -818,9 +941,6 @@ function InboxPage() {
     if (!token()) { navigate('/login?next=%2Finbox'); return; }
     axios.get('/api/conversations/', authConfig()).then((response) => setConversations(response.data || [])).finally(() => setLoading(false));
   }, [navigate]);
-  useEffect(() => {
-    if (!loading && conversations.length) navigate(`/inbox/${conversations[0].id}`, { replace: true });
-  }, [loading, conversations, navigate]);
   if (!token()) return null;
   return (
     <div className={`app-shell private-inbox-shell ${dark ? 'theme-dark' : ''}`}>
@@ -856,7 +976,10 @@ function PrivateChatPage() {
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [deleteRequest, setDeleteRequest] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
+  const [reporting, setReporting] = useState(false);
   const [eyeLoading, setEyeLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const socketRef = useRef(null);
   const streamRef = useRef(null);
 
@@ -977,6 +1100,8 @@ function PrivateChatPage() {
     } finally { setDeleting(false); }
   };
 
+  const submitReport = async ({ reason, detail }) => { if (!token()) { navigate(`/login?next=%2Finbox%2F${id}`); return; } setReporting(true); try { const targetPath = reportTarget.type === 'message' ? `/api/report/message/${reportTarget.id}/` : `/api/report/conversation/${id}/`; await axios.post(targetPath, { reason, detail }, authConfig()); setReportTarget(null); setError('Report submitted. Thank you for helping keep the room safe.'); } catch (err) { setError(err.response?.data?.error || 'Could not submit this report.'); } finally { setReporting(false); } };
+
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1049,8 +1174,8 @@ function PrivateChatPage() {
 
   return (
     <div className={`app-shell private-inbox-shell ${dark ? 'theme-dark' : ''}`}>
-      <main className="private-inbox-layout container">
-        <PrivateConversationList conversations={conversations} activeId={id} loading={loading} dark={dark} onToggle={onToggle} />
+      <main className={`private-inbox-layout container has-active-chat ${sidebarOpen ? 'is-sidebar-open' : ''}`}>
+        <PrivateConversationList conversations={conversations} activeId={id} loading={loading} dark={dark} onToggle={onToggle} onCloseSidebar={() => setSidebarOpen(false)} />
         <section className="private-chat-pane">
           {loading ? (
             <div className="private-empty-pane"><p className="private-muted">Loading conversation…</p></div>
@@ -1060,6 +1185,15 @@ function PrivateChatPage() {
             <>
               <header className="private-chat-head">
                 <div className="private-chat-head-main">
+                  <button
+                    type="button"
+                    className="private-sidebar-toggle"
+                    onClick={() => setSidebarOpen((open) => !open)}
+                    aria-label={sidebarOpen ? 'Hide conversations' : 'Show conversations'}
+                    aria-expanded={sidebarOpen}
+                  >
+                    {sidebarOpen ? <X size={19} /> : <Menu size={19} />}
+                  </button>
                   <Link to="/inbox" className="private-back"><ArrowLeft size={16} /> Inbox</Link>
                   <Avatar person={otherParticipant || otherName} small />
                   <div className="private-chat-head-copy">
@@ -1076,7 +1210,7 @@ function PrivateChatPage() {
                     <button type="button" className="selection-close" onClick={() => { setSelectionMode(false); setSelectedMessageIds([]); }} aria-label="Cancel selection">×</button>
                     <strong>{selectedMessageIds.length} selected</strong>
                     <button type="button" className="selection-delete" disabled={!selectedMessageIds.length} onClick={() => requestDeleteMessages(selectedMessageIds)}><Trash2 size={15} /> Delete</button>
-                  </> : <button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button>}
+                  </> : <><button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button><button type="button" className="report-thread-button" onClick={() => setReportTarget({ type: 'conversation' })} aria-label="Report conversation" title="Report conversation"><Flag size={16} /></button></>}
                   <EyeToggle
                     isPublic={Boolean(conversation?.is_public)}
                     onToggle={toggleEye}
@@ -1120,6 +1254,7 @@ function PrivateChatPage() {
                           {selectionMode && <span className={`message-selection-mark ${selectedMessageIds.includes(message.id) ? 'is-selected' : ''}`} aria-hidden="true">{selectedMessageIds.includes(message.id) ? '✓' : ''}</span>}
                           <button type="button" className="private-message-delete" onClick={() => requestDeleteMessages([message.id])} aria-label="Delete your message" title="Delete message"><Trash2 size={14} /></button>
                         </>}
+                        {!isMine && <button type="button" className="private-message-report" onClick={() => setReportTarget({ type: 'message', id: message.id })} aria-label="Report message" title="Report message"><Flag size={14} /></button>}
                       </div>
                     </div>
                   );
@@ -1141,13 +1276,14 @@ function PrivateChatPage() {
         </section>
       </main>
       {deleteRequest && <DeleteMessagesModal count={deleteRequest.length} onCancel={() => setDeleteRequest(null)} onConfirm={deleteMessages} deleting={deleting} />}
+      {reportTarget && <ReportModal target={reportTarget} onClose={() => setReportTarget(null)} onSubmit={submitReport} submitting={reporting} />}
     </div>
   );
 }
 
-function LoginPage() { const navigate = useNavigate(); const location = useLocation(); const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const next = new URLSearchParams(location.search).get('next') || '/'; const intent = new URLSearchParams(location.search).get('intent'); const submit = async (event) => { event.preventDefault(); setLoading(true); setError(''); try { const response = await axios.post('/api/auth/login/', { username, password }); saveSession(response.data); navigate(intent === 'create' ? `${next}?intent=create` : next); } catch (err) { setError(err.response?.data?.error || 'Invalid username or password'); } finally { setLoading(false); } }; return <AuthForm title="Log in to CCHAT." intro="Welcome back." submitLabel="Access the room" fields={[['Username', username, setUsername, 'text'], ['Password', password, setPassword, 'password']]} onSubmit={submit} loading={loading} error={error} footer={<span>New here? <Link to="/register">Create an identity</Link></span>} />; }
+function LoginPage() { const navigate = useNavigate(); const location = useLocation(); const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const [googleLoading, setGoogleLoading] = useState(false); const next = new URLSearchParams(location.search).get('next') || '/'; const intent = new URLSearchParams(location.search).get('intent'); const finishLogin = (data) => { saveSession(data); navigate(intent === 'create' ? `${next}?intent=create` : next); }; const google = useGoogleLogin({ onSuccess: async (response) => { setGoogleLoading(true); setError(''); try { const result = await axios.post('/api/auth/google/', { token: response.access_token }); finishLogin(result.data); } catch (err) { setError(err.response?.data?.error || 'Google sign-in failed.'); } finally { setGoogleLoading(false); } }, onError: () => setError('Google sign-in was cancelled or failed.') }); const submit = async (event) => { event.preventDefault(); setLoading(true); setError(''); try { const response = await axios.post('/api/auth/login/', { username, password }); finishLogin(response.data); } catch (err) { setError(err.response?.data?.error || 'Invalid username or password'); } finally { setLoading(false); } }; return <AuthForm title="Log in to CCHAT." intro="Welcome back." submitLabel="Access the room" fields={[['Username', username, setUsername, 'text'], ['Password', password, setPassword, 'password']]} onSubmit={submit} loading={loading} error={error} onGoogle={google} googleLoading={googleLoading} footer={<span>New here? <Link to="/register">Create an identity</Link></span>} />; }
 function RegisterPage() { const navigate = useNavigate(); const location = useLocation(); const [form, setForm] = useState({ username: '', email: '', password: '', password2: '' }); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const update = (field) => (value) => setForm((current) => ({ ...current, [field]: value })); const submit = async (event) => { event.preventDefault(); if (form.password !== form.password2) { setError('Passwords do not match'); return; } setLoading(true); setError(''); try { const response = await axios.post('/api/auth/register/', form); saveSession(response.data); navigate(new URLSearchParams(location.search).get('next') || '/'); } catch (err) { const detail = err.response?.data; setError(detail?.username?.[0] || detail?.email?.[0] || detail?.password?.[0] || detail?.detail || 'Registration failed'); } finally { setLoading(false); } }; return <AuthForm title="Create your identity." intro="Find your people." submitLabel="Create identity" fields={[['Username', form.username, update('username'), 'text'], ['Email', form.email, update('email'), 'email'], ['Password', form.password, update('password'), 'password'], ['Confirm password', form.password2, update('password2'), 'password']]} onSubmit={submit} loading={loading} error={error} footer={<span>Already registered? <Link to="/login">Log in</Link></span>} />; }
-function AuthForm({ title, intro, submitLabel, fields, onSubmit, loading, error, footer }) { return <div className="app-shell auth-page"><Header dark={false} onToggle={() => {}} /><main className="auth-layout container"><div className="auth-intro"><span className="eyebrow">CCHAT / ACCESS</span><h1>{intro}<br /><span>here.</span></h1><p>One identity. As much anonymity as you want.</p></div><section className="auth-card"><div className="card-topline"><span className="thread-id">SECURE ENTRY</span><span className="category">CCHAT</span></div><h2>{title}</h2>{error && <div className="auth-error" role="alert">{error}</div>}<form onSubmit={onSubmit} className="auth-form">{fields.map(([label, value, onChange, type]) => <label key={label}>{label}<input type={type} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} required autoComplete={type === 'password' ? 'current-password' : label.toLowerCase()} /></label>)}<button className="button button-primary auth-submit" type="submit" disabled={loading}>{loading ? 'Working…' : submitLabel} <ArrowUpRight size={17} /></button></form><p className="auth-footnote">{footer}</p></section></main></div>; }
+function AuthForm({ title, intro, submitLabel, fields, onSubmit, loading, error, onGoogle, googleLoading, footer }) { return <div className="app-shell auth-page"><Header dark={false} onToggle={() => {}} /><main className="auth-layout container"><div className="auth-intro"><span className="eyebrow">CCHAT / ACCESS</span><h1>{intro}<br /><span>here.</span></h1><p>One identity. As much anonymity as you want.</p></div><section className="auth-card"><div className="card-topline"><span className="thread-id">SECURE ENTRY</span><span className="category">CCHAT</span></div><h2>{title}</h2>{error && <div className="auth-error" role="alert">{error}</div>}{onGoogle && <><button type="button" className="google-auth-button" onClick={() => onGoogle()} disabled={googleLoading || loading}><span className="google-mark">G</span>{googleLoading ? 'Connecting…' : 'Continue with Google'}</button><div className="auth-divider"><span>or</span></div></>}<form onSubmit={onSubmit} className="auth-form">{fields.map(([label, value, onChange, type]) => <label key={label}>{label}<input type={type} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} required autoComplete={type === 'password' ? 'current-password' : label.toLowerCase()} /></label>)}<button className="button button-primary auth-submit" type="submit" disabled={loading || googleLoading}>{loading ? 'Working…' : submitLabel} <ArrowUpRight size={17} /></button></form><p className="auth-footnote">{footer}</p></section></main></div>; }
 function Footer() {
   return (
     <footer className="site-footer container">
@@ -1213,6 +1349,7 @@ function ProfilePage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [query, isOwnProfile]);
+
 
   return (
     <div className={`app-shell ${dark ? 'theme-dark' : ''}`}>
@@ -1310,11 +1447,6 @@ function ProfilePage() {
                       >
                         <div className="account-conv-name">
                           <strong>{displayName(chat.other_participant) || 'Conversation'}</strong>
-                          {isOwnProfile && (
-                            <span className={`pill-badge ${chat.is_public ? 'is-public' : 'is-private'}`}>
-                              {chat.is_public ? 'Public' : 'Private'}
-                            </span>
-                          )}
                         </div>
                         <span>{chat.last_message?.text || 'No messages yet.'}</span>
                         <ChevronRight size={16} />
@@ -1343,9 +1475,6 @@ function ProfilePage() {
                       >
                         <div className="account-conv-name">
                           <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
-                          <span className={`pill-badge ${conversation.is_public ? 'is-public' : 'is-private'}`}>
-                            {conversation.is_public ? 'Public' : 'Private'}
-                          </span>
                         </div>
                         <span>{conversation.last_message?.text || 'No messages yet.'}</span>
                         <ChevronRight size={16} />
@@ -1377,6 +1506,56 @@ function MessagesRedirect() {
   return <Navigate to={`/profile/${user.username}`} replace />;
 }
 
+function AdminDashboardPage() {
+  const [dark, setDark] = useDarkMode();
+  const [dashboard, setDashboard] = useState(null);
+  const [reports, setReports] = useState([]);
+  const [verification, setVerification] = useState([]);
+  const [sponsorships, setSponsorships] = useState([]);
+  const [tab, setTab] = useState('overview');
+  const [error, setError] = useState('');
+  const [sponsorForm, setSponsorForm] = useState({ conversation_id: '', sponsor_name: '', sponsor_text: '' });
+  const [sponsorLogo, setSponsorLogo] = useState(null);
+  const [sponsorSaving, setSponsorSaving] = useState(false);
+  const load = async () => {
+    try {
+      const [summary, reportList, verificationList, sponsorshipList] = await Promise.all([
+        axios.get('/api/moderation/dashboard/', authConfig()),
+        axios.get('/api/moderation/reports/', authConfig()),
+        axios.get('/api/moderation/verification-requests/', authConfig()),
+        axios.get('/api/moderation/sponsorships/', authConfig()),
+      ]);
+      setDashboard(summary.data);
+      setReports(reportList.data || []);
+      setVerification(verificationList.data || []);
+      setSponsorships(sponsorshipList.data || []);
+      setError('');
+    } catch (err) {
+      setError(err.response?.status === 403 ? 'Not authorized.' : 'Could not load the staff dashboard.');
+    }
+  };
+  useEffect(() => { load(); }, []);
+  const reviewReport = async (id, action) => { await axios.post(`/api/moderation/reports/${id}/action/`, { action }, authConfig()); load(); };
+  const reviewVerification = async (id, action) => { await axios.post(`/api/moderation/verification-requests/${id}/review/`, { action }, authConfig()); load(); };
+  const createSponsorship = async (event) => { event.preventDefault(); setSponsorSaving(true); try { const payload = new FormData(); Object.entries(sponsorForm).forEach(([key, value]) => payload.append(key, value)); if (sponsorLogo) payload.append('sponsor_logo', sponsorLogo); await axios.post('/api/moderation/sponsorships/create/', payload, authConfig()); setSponsorForm({ conversation_id: '', sponsor_name: '', sponsor_text: '' }); setSponsorLogo(null); await load(); } catch (err) { setError(err.response?.data?.error || 'Could not create sponsorship.'); } finally { setSponsorSaving(false); } };
+  const statItems = dashboard ? [['Users', dashboard.stats.users], ['Rooms', dashboard.stats.conversations], ['Messages', dashboard.stats.messages], ['Active / 7d', dashboard.stats.active_users_7d], ['Reports', dashboard.stats.pending_reports], ['Verification', dashboard.stats.pending_verification]] : [];
+  if (error) return <div className={`app-shell ${dark ? 'theme-dark' : ''}`}><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="empty-state container"><h1>{error}</h1></main></div>;
+  return (
+    <div className={`app-shell ${dark ? 'theme-dark' : ''}`}>
+      <Header dark={dark} onToggle={() => setDark(!dark)} />
+      <main className="admin-dashboard container">
+        <div className="admin-dashboard-head"><div><span className="eyebrow">CCHAT / STAFF CONTROL</span><h1>Command room.</h1><p>Moderate the room, review trust signals, and keep the conversation healthy.</p></div><button className="button" onClick={load}>Refresh <ArrowUpRight size={16} /></button></div>
+        <div className="admin-stat-grid">{statItems.map(([label, value]) => <article className="admin-stat-card" key={label}><span>{label}</span><strong>{value ?? '—'}</strong></article>)}</div>
+        <nav className="admin-tabs" aria-label="Dashboard sections">{[['overview', 'Overview'], ['reports', `Reports (${reports.length})`], ['verification', `Verification (${verification.length})`], ['sponsorships', `Sponsorships (${sponsorships.length})`]].map(([value, label]) => <button type="button" className={tab === value ? 'is-active' : ''} onClick={() => setTab(value)} key={value}>{label}</button>)}</nav>
+        {tab === 'overview' && dashboard && <div className="admin-dashboard-grid"><section className="admin-panel"><div className="admin-panel-head"><span className="section-kicker">Recent people</span><strong>New identities</strong></div>{dashboard.recent_users.map((user) => <div className="admin-row" key={user.id}><strong>@{user.username}</strong><span>{user.verification_status}</span><small>{new Date(user.joined_at).toLocaleDateString()}</small></div>)}</section><section className="admin-panel"><div className="admin-panel-head"><span className="section-kicker">Recent rooms</span><strong>Conversation activity</strong></div>{dashboard.recent_conversations.map((room) => <div className="admin-row" key={room.id}><strong>CCHAT-{String(room.id).padStart(3, '0')}</strong><span>{room.participants.join(' × ') || 'No participants'}</span><small>{room.message_count} messages</small></div>)}</section></div>}
+        {tab === 'reports' && <section className="admin-panel admin-queue"><div className="admin-panel-head"><span className="section-kicker">Trust & safety</span><strong>Pending reports</strong></div>{reports.length ? reports.map((report) => <article className="admin-queue-item" key={report.id}><div><strong>{report.reason}</strong><span>{report.target_type} #{report.target_id} · reported by @{report.reporter}</span><p>{report.detail || 'No additional detail.'}</p></div><div className="admin-queue-actions"><button onClick={() => reviewReport(report.id, 'dismiss')}>Dismiss</button><button className="is-danger" onClick={() => reviewReport(report.id, 'remove_content')}>Remove content</button><button className="is-danger" onClick={() => reviewReport(report.id, 'suspend_user')}>Suspend user</button></div></article>) : <p className="empty-state">No pending reports.</p>}</section>}
+        {tab === 'verification' && <section className="admin-panel admin-queue"><div className="admin-panel-head"><span className="section-kicker">Identity review</span><strong>Verification requests</strong></div>{verification.length ? verification.map((request) => <article className="admin-queue-item" key={request.profile_id}><div><strong>@{request.username}</strong><span>{request.verification_url}</span><p>{request.verification_text}</p></div><div className="admin-queue-actions"><button onClick={() => reviewVerification(request.profile_id, 'reject')}>Reject</button><button className="is-approve" onClick={() => reviewVerification(request.profile_id, 'approve')}>Approve</button></div></article>) : <p className="empty-state">No pending verification requests.</p>}</section>}
+        {tab === 'sponsorships' && <section className="admin-panel admin-queue"><div className="admin-panel-head"><span className="section-kicker">Partner content</span><strong>Create and review</strong></div><form className="admin-sponsor-form" onSubmit={createSponsorship}><input required inputMode="numeric" placeholder="Conversation ID" value={sponsorForm.conversation_id} onChange={(event) => setSponsorForm({ ...sponsorForm, conversation_id: event.target.value })} /><input type="file" accept="image/*" onChange={(event) => setSponsorLogo(event.target.files?.[0] || null)} /><input required placeholder="Sponsor name" value={sponsorForm.sponsor_name} onChange={(event) => setSponsorForm({ ...sponsorForm, sponsor_name: event.target.value })} /><textarea required placeholder="Sponsor description" value={sponsorForm.sponsor_text} onChange={(event) => setSponsorForm({ ...sponsorForm, sponsor_text: event.target.value })} /><input inputMode="numeric" placeholder="Attached message ID / index (optional)" value={sponsorForm.message_id || ''} onChange={(event) => setSponsorForm({ ...sponsorForm, message_id: event.target.value })} /><button className="button button-primary" disabled={sponsorSaving}>{sponsorSaving ? 'Creating…' : 'Create sponsorship'}</button></form>{sponsorships.length ? sponsorships.map((item) => <article className="admin-queue-item" key={item.id}><div>{item.sponsor_logo && <img src={resolveMediaUrl(item.sponsor_logo)} alt="" className="admin-sponsor-logo" />}<strong>{item.sponsor_name}</strong><span>Conversation {item.conversation} · {item.status || 'pending'}{item.attached_message_id ? ` · message #${item.attached_message_id}` : ''}</span><p>{item.sponsor_description || item.sponsor_text || 'No sponsor description.'}</p></div></article>) : <p className="empty-state">No sponsorships yet.</p>}</section>}
+      </main>
+    </div>
+  );
+}
+
 function SponsorshipAdminPage() {
   const [profile, setProfile] = useState(null); const [items, setItems] = useState([]); const [form, setForm] = useState({ conversation_id: '', sponsor_name: '', sponsor_text: '' }); const [message, setMessage] = useState('');
   const load = async () => { try { const response = await axios.get('/api/moderation/sponsorships/', authConfig()); setItems(response.data || []); } catch (error) { if (error.response?.status === 403) setMessage('Not authorized'); else setMessage('Could not load sponsorships.'); } };
@@ -1392,6 +1571,8 @@ function ExplorePage() {
   const [threads, setThreads] = useState([]);
   const [query, setQuery] = useState('');
   const [activeTopic, setActiveTopic] = useState('All');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -1408,14 +1589,40 @@ function ExplorePage() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const term = query.trim();
+    if (!term) { setSearchResults(null); setSearching(false); return undefined; }
+    let active = true;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const response = await axios.get(`/api/search/conversations/?q=${encodeURIComponent(term)}`, authConfig());
+        if (active) setSearchResults(response.data || []);
+      } catch {
+        if (active) setSearchResults(null);
+      } finally { if (active) setSearching(false); }
+    }, 240);
+    return () => { active = false; clearTimeout(timer); };
+  }, [query]);
+
   const filteredThreads = useMemo(() => {
-    return threads.filter((t) => {
-      const matchQuery = !query.trim() || 
-        (t.messages || []).some((m) => m.text?.toLowerCase().includes(query.toLowerCase())) ||
-        (t.participants || []).some((p) => displayName(p).toLowerCase().includes(query.toLowerCase()));
-      return matchQuery;
+    const source = query.trim() && searchResults ? searchResults : threads;
+    const topicTerms = {
+      'Late Night': ['late', 'night', 'midnight', 'sleep', 'dream', 'insomnia'],
+      'Hot Takes': ['hot take', 'opinion', 'controversial', 'unpopular', 'take:'],
+      'Philosophy': ['why', 'meaning', 'life', 'truth', 'ethics', 'existence', 'philosophy'],
+      'Tech & AI': ['tech', ' ai ', 'code', 'coding', 'computer', 'software', 'app', 'machine'],
+      'Confessions': ['confess', 'secret', 'regret', 'admit', 'guilty', 'never told'],
+      'Culture': ['music', 'movie', 'film', 'art', 'book', 'fashion', 'game', 'culture'],
+    };
+    const terms = topicTerms[activeTopic] || [];
+    return source.filter((t) => {
+      const corpus = [...(t.messages || []).map((m) => m.text || ''), ...(t.participants || []).map((p) => displayName(p))].join(' ').toLowerCase();
+      const matchQuery = !query.trim() || Boolean(searchResults) || corpus.includes(query.trim().toLowerCase());
+      const matchTopic = activeTopic === 'All' || activeTopic === 'Unfiltered' || terms.some((term) => corpus.includes(term));
+      return matchQuery && matchTopic;
     });
-  }, [threads, query]);
+  }, [threads, searchResults, query, activeTopic]);
 
   return (
     <div className={`app-shell ${dark ? 'theme-dark' : ''}`}>
@@ -1462,7 +1669,7 @@ function ExplorePage() {
           </div>
         ) : (
           <div className="empty-state">
-            <p>No conversations matched "{query}". Start a new one and bring your topic to the room.</p>
+            <p>{searching ? 'Searching the room…' : `No conversations matched "${query || activeTopic}". Start a new one and bring your topic to the room.`}</p>
           </div>
         )}
       </main>
@@ -1730,6 +1937,8 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/admin" element={<AdminDashboardPage />} />
+        <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
         <Route path="/admin/sponsorships" element={<SponsorshipAdminPage />} />
       </Routes>
     </Router>
