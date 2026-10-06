@@ -13,9 +13,10 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializer for User model"""
     is_verified = serializers.SerializerMethodField()
     is_staff = serializers.BooleanField(read_only=True)
+    avatar_url = serializers.SerializerMethodField()
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_verified', 'is_staff']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_verified', 'is_staff', 'avatar_url']
         read_only_fields = ['id']
 
     def get_is_verified(self, obj):
@@ -23,6 +24,12 @@ class UserSerializer(serializers.ModelSerializer):
             return obj.profile.verification_status == 'VERIFIED'
         except Exception:
             return False
+
+    def get_avatar_url(self, obj):
+        try:
+            return obj.profile.get_avatar_url()
+        except Exception:
+            return None
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -149,7 +156,8 @@ class MessagePollSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     """Serializer for Message model"""
-    sender_username = serializers.CharField(source='sender.username', read_only=True)
+    sender_username = serializers.SerializerMethodField()
+    attachment = serializers.SerializerMethodField()
     comments = serializers.SerializerMethodField()
     dominant_reaction = serializers.ReadOnlyField()
     user_reaction = serializers.SerializerMethodField()
@@ -163,6 +171,23 @@ class MessageSerializer(serializers.ModelSerializer):
             'dominant_reaction', 'user_reaction', 'comments', 'poll_data'
         ]
         read_only_fields = ['id', 'sender', 'timestamp', 'likes', 'dislikes', 'caps', 'smiles', 'views']
+
+    def get_sender_username(self, obj):
+        if not obj.sender:
+            return "Anonymous"
+        conversation = obj.conversation
+        if conversation and not conversation.is_public_for_user(obj.sender):
+            anon = AnonymousProfile.get_or_create_for_user(conversation, obj.sender)
+            return anon.fake_username
+        return obj.sender.username
+
+    def get_attachment(self, obj):
+        if obj.attachment:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.attachment.url)
+            return obj.attachment.url
+        return None
 
     def get_poll_data(self, obj):
         if obj.message_type == 'poll' and hasattr(obj, 'poll_data'):
@@ -233,9 +258,10 @@ class ConversationSerializer(serializers.ModelSerializer):
         """Get the other participant's info"""
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            other = obj.get_other_participant(request.user)
-            if other:
-                return UserSerializer(other).data
+            if obj.participants.filter(id=request.user.id).exists():
+                other = obj.get_other_participant(request.user)
+                if other:
+                    return UserSerializer(other).data
         return None
 
     def get_user_reactions(self, obj):

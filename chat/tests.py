@@ -131,6 +131,17 @@ class CChatAPITestCase(TestCase):
         self.assertFalse(async_to_sync(consumer.edit_message_from_db)(new_message.id, 'intruded edit'))
         self.assertEqual(self.client.delete(f'/api/messages/{new_message.id}/delete/').status_code, 204)
 
+    def test_only_message_author_can_delete_message(self):
+        self.authenticate(self.bob)
+        denied = self.client.delete(f'/api/messages/{self.message.id}/delete/')
+        self.assertEqual(denied.status_code, 403)
+        self.assertTrue(Message.objects.filter(id=self.message.id).exists())
+
+        self.authenticate(self.alice)
+        deleted = self.client.delete(f'/api/messages/{self.message.id}/delete/')
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(Message.objects.filter(id=self.message.id).exists())
+
     def test_private_message_reactions_and_comments_are_protected(self):
         self.authenticate(self.eve)
         self.assertEqual(self.client.post(f'/api/messages/{self.message.id}/react/', {'reaction_type': 'like'}, format='json').status_code, 403)
@@ -340,9 +351,62 @@ class CChatAPITestCase(TestCase):
         bob_ids = [c['id'] for c in bob_res.data]
         self.assertEqual(bob_ids, [other_conv.id])
 
+    def test_toggle_bookmark_and_conversation_is_bookmarked_field(self):
+        """POST /api/conversations/<id>/bookmark/ toggles bookmark and updates is_bookmarked."""
+        # Unauthenticated cannot toggle bookmark
+        anon_res = self.client.post(f'/api/conversations/{self.conversation.id}/bookmark/')
+        self.assertEqual(anon_res.status_code, 401)
+
+        # Authenticate Alice
+        self.authenticate(self.alice)
+
+        # Initially not bookmarked in conversation detail
+        conv_res = self.client.get(f'/api/conversations/{self.conversation.id}/')
+        self.assertEqual(conv_res.status_code, 200)
+        self.assertFalse(conv_res.data['conversation']['is_bookmarked'])
+
+        # Toggle on
+        res = self.client.post(f'/api/conversations/{self.conversation.id}/bookmark/')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data['is_bookmarked'])
+        self.assertTrue(ConversationBookmark.objects.filter(user=self.alice, conversation=self.conversation).exists())
+
+        # Now conversation detail shows is_bookmarked: True
+        conv_res = self.client.get(f'/api/conversations/{self.conversation.id}/')
+        self.assertTrue(conv_res.data['conversation']['is_bookmarked'])
+
+        # Toggle off
+        res2 = self.client.post(f'/api/conversations/{self.conversation.id}/bookmark/')
+        self.assertEqual(res2.status_code, 200)
+        self.assertFalse(res2.data['is_bookmarked'])
+        self.assertFalse(ConversationBookmark.objects.filter(user=self.alice, conversation=self.conversation).exists())
+
+        # Conversation detail now shows is_bookmarked: False
+        conv_res = self.client.get(f'/api/conversations/{self.conversation.id}/')
+        self.assertFalse(conv_res.data['conversation']['is_bookmarked'])
+
+    def test_react_to_anonymous_message_does_not_reveal_sender_name(self):
+        """Reacting to an anonymous user's message must never reveal their real username."""
+        # Conversation between Alice (public) and Bob (anonymous)
+        conv = Conversation.objects.create()
+        conv.participants.add(self.alice, self.bob)
+        ChatVisibility.objects.create(user=self.alice, conversation=conv, is_public=True)
+        ChatVisibility.objects.create(user=self.bob, conversation=conv, is_public=False)
+
+        # Bob sends a message
+        msg = Message.objects.create(conversation=conv, sender=self.bob, text="Anonymous secret message")
+
+        # Alice reacts to Bob's message
+        self.authenticate(self.alice)
+        res = self.client.post(f'/api/messages/{msg.id}/react/', {'reaction_type': 'like'})
+        self.assertEqual(res.status_code, 200)
+
+        # The response must NOT contain Bob's real username
+        self.assertNotEqual(res.data['sender_username'], self.bob.username)
+        self.assertEqual(res.data['sender_username'], 'Anonymous')
+
 class JWTBlacklistConfigurationTest(TestCase):
     def test_blacklist_app_is_installed(self):
         from django.conf import settings
         self.assertIn('rest_framework_simplejwt.token_blacklist', settings.INSTALLED_APPS)
-
 

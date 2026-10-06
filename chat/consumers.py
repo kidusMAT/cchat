@@ -868,6 +868,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'dominant_reaction': event.get('dominant_reaction', 'neutral'),
             'is_edited': event.get('is_edited', False),
             'message_type': event.get('message_type', 'text'),
+            'attachment': event.get('attachment', None),
             'poll_data': event.get('poll_data', None),
         }))
 

@@ -38,6 +38,7 @@ from .serializers import (
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from .ambient import AMBIENT_GROUP, AMBIENT_REACTION_EMOJIS
+from .search import hybrid_search
 
 
 def broadcast_ambient_reaction(reaction_type):
@@ -996,6 +997,42 @@ def search_conversations(request):
     return Response(result)
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def hybrid_message_search(request):
+    """Search every message the viewer can see using lexical + semantic ranking."""
+    query = request.GET.get('q', '').strip()
+    if not query:
+        return Response({'query': '', 'results': [], 'search_mode': 'hybrid'})
+
+    try:
+        limit = min(max(int(request.GET.get('limit', 30)), 1), 50)
+    except (TypeError, ValueError):
+        limit = 30
+    ranked = hybrid_search(query, request.user, limit=limit)
+    results = []
+    for score, document in ranked:
+        conversation = document.conversation
+        participants = []
+        for participant in conversation.participants.all().order_by('id'):
+            is_public = conversation.is_public_for_user(participant)
+            if is_public or (request.user.is_authenticated and participant.id == request.user.id):
+                participants.append(participant.username)
+            else:
+                participants.append('Anonymous')
+        results.append({
+            'message_id': document.message_id,
+            'conversation_id': conversation.id,
+            'message': document.text,
+            'timestamp': document.message_timestamp,
+            'sender': document.sender.username if request.user.is_authenticated and document.sender_id == request.user.id else 'Anonymous' if not conversation.is_public_for_user(document.sender) else document.sender.username,
+            'conversation_label': ' × '.join(participants),
+            'score': round(score, 4),
+            'is_private': not conversation.visibilities.filter(is_public=True).exists(),
+        })
+    return Response({'query': query, 'results': results, 'search_mode': 'hybrid'})
+
+
 def _can_access_message(request, message):
     """Participants and readers of public conversations may access a message."""
     if message.is_removed or message.conversation.is_removed:
@@ -1296,12 +1333,14 @@ def get_user_bookmarks(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def send_message(request):
-    """Send a new message in a conversation"""
+    """Send a new message in a conversation with optional file or audio attachment"""
     conversation_id = request.data.get('conversation_id')
-    text = request.data.get('text')
+    text = (request.data.get('text') or '').strip()
+    message_type = request.data.get('message_type', 'text')
+    attachment = request.FILES.get('attachment') or request.FILES.get('file')
     
-    if not text:
-        return Response({'error': 'Message text is required'}, status=status.HTTP_400_BAD_REQUEST)
+    if not text and not attachment:
+        return Response({'error': 'Message text or attachment is required'}, status=status.HTTP_400_BAD_REQUEST)
     
     conversation = get_object_or_404(Conversation, id=conversation_id)
     
@@ -1309,16 +1348,57 @@ def send_message(request):
     if not conversation.participants.filter(id=request.user.id).exists():
         return Response({'error': 'Not a participant'}, status=status.HTTP_403_FORBIDDEN)
     
+    if not text and attachment:
+        if message_type == 'audio':
+            text = 'Voice message'
+        elif message_type == 'image':
+            text = 'Image attachment'
+        else:
+            text = attachment.name or 'File attachment'
+
+    if attachment and message_type == 'text':
+        content_type = getattr(attachment, 'content_type', '')
+        if content_type.startswith('image/'):
+            message_type = 'image'
+        elif content_type.startswith('audio/'):
+            message_type = 'audio'
+        else:
+            message_type = 'file'
+
     message = Message.objects.create(
         conversation=conversation,
         sender=request.user,
-        text=text
+        text=text,
+        message_type=message_type,
+        attachment=attachment
     )
     
     # Update conversation timestamp
     conversation.save()
     
-    return Response(MessageSerializer(message, context={'request': request}).data, status=status.HTTP_201_CREATED)
+    serialized = MessageSerializer(message, context={'request': request}).data
+
+    # Broadcast to WebSocket channel group
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'chat_{conversation.id}',
+            {
+                'type': 'chat_message',
+                'id': message.id,
+                'senderId': request.user.id,
+                'sender_username': serialized.get('sender_username'),
+                'text': message.text,
+                'timestamp': message.timestamp.isoformat(),
+                'chatId': conversation.id,
+                'message_type': message.message_type,
+                'attachment': serialized.get('attachment'),
+            }
+        )
+    except Exception:
+        pass
+
+    return Response(serialized, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])

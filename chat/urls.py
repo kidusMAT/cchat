@@ -44,6 +44,7 @@ urlpatterns = [
     path('chats/following/', views.get_following_chats, name='following_chats'),
     path('search/users/', views.search_users, name='search_users'),
     path('search/conversations/', views.search_conversations, name='search_conversations'),
+    path('search/', views.hybrid_message_search, name='hybrid_search'),
     
     # Conversations
     path('conversations/', views.get_user_conversations, name='user_conversations'),

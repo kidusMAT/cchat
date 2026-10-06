@@ -1,10 +1,74 @@
 /* Hallmark · macrostructure: Marquee + live index · tone: tactile editorial · anchor hue: hot-pink */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserRouter as Router, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Bookmark, ChevronRight, Eye, EyeOff, Flame, Heart, LogOut, Moon, Search, Send, Skull, Sparkles, Sun, Users } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Bookmark, ChevronRight, Eye, EyeOff, Flame, Heart, LogOut, Mic, Moon, Paperclip, Pause, Play, Search, Send, Skull, Sparkles, Square, Sun, Trash2, Users } from 'lucide-react';
 import axios from 'axios';
 import SettingsPage from './Settings.jsx';
 import './index.css';
+
+function VoiceMessagePlayer({ src, text }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const togglePlay = (e) => {
+    e.stopPropagation();
+    if (!audioRef.current) return;
+    if (playing) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(() => {});
+    }
+  };
+
+  const formatTime = (secs) => {
+    if (!secs || isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div className="voice-player" onClick={(e) => e.stopPropagation()}>
+      <audio
+        ref={audioRef}
+        src={src}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrentTime(0); }}
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+      />
+      <button
+        type="button"
+        className="voice-play-btn"
+        onClick={togglePlay}
+        aria-label={playing ? 'Pause voice message' : 'Play voice message'}
+      >
+        {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" style={{ marginLeft: 2 }} />}
+      </button>
+      <div
+        className="voice-track"
+        onClick={(e) => {
+          if (!audioRef.current || !duration) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const pct = Math.max(0, Math.min(1, clickX / rect.width));
+          audioRef.current.currentTime = pct * duration;
+        }}
+      >
+        <div className="voice-progress" style={{ width: `${progress}%` }} />
+      </div>
+      <span className="voice-time">
+        {formatTime(currentTime)}{duration ? ` / ${formatTime(duration)}` : ''}
+      </span>
+      {text && text !== 'Voice message' && <p className="voice-text">{text}</p>}
+    </div>
+  );
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 axios.defaults.baseURL = API_URL;
@@ -13,6 +77,15 @@ function sessionUser() {
   try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; }
 }
 function token() { return localStorage.getItem('access'); }
+function useDarkMode() {
+  const [dark, setDark] = useState(() => localStorage.getItem('cchat_theme') === 'dark');
+  const toggle = () => setDark((current) => {
+    const next = !current;
+    localStorage.setItem('cchat_theme', next ? 'dark' : 'light');
+    return next;
+  });
+  return [dark, toggle];
+}
 function authConfig() { const access = token(); return access ? { headers: { Authorization: `Bearer ${access}` } } : {}; }
 function saveSession(data) {
   localStorage.setItem('access', data.tokens.access);
@@ -43,6 +116,104 @@ function displayName(participant) { return participant?.username || 'Anonymous';
 function memberSince(value) { if (!value) return 'member since unknown'; const date = new Date(value); return Number.isNaN(date.getTime()) ? 'member since unknown' : `member since ${date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`; }
 function participantTone(index, participant) { if (participant?.is_anonymous) return 'black'; return ['pink', 'blue', 'yellow', 'green'][index % 4]; }
 
+/* ─── SOUND ENGINE (Web Audio API, no files) ─── */
+let _ac = null;
+
+function _getAC() {
+  if (!_ac) {
+    try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
+  }
+  return _ac;
+}
+
+// Unlock AudioContext on ANY user gesture, globally, for the life of the page.
+// This covers all pages — not just PrivateChatPage.
+const _doUnlock = () => {
+  const ac = _getAC();
+  if (ac && ac.state !== 'running') ac.resume().catch(() => {});
+};
+document.addEventListener('click', _doUnlock, { passive: true });
+document.addEventListener('keydown', _doUnlock, { passive: true });
+document.addEventListener('touchstart', _doUnlock, { passive: true });
+
+/**
+ * Play a synthesised sound. async so it can await resume() if needed.
+ * @param {'send'|'receive'|'reaction'|'open'|'notify'} type
+ */
+async function playSound(type) {
+  try {
+    if (localStorage.getItem('cchat_sounds') === 'off') return;
+    const ac = _getAC();
+    if (!ac) return;
+    // Always resume if suspended — await so notes don't fire before audio starts
+    if (ac.state === 'suspended') await ac.resume();
+    // Small offset: gives browser a breath after resume before oscillators fire
+    const t = ac.currentTime + 0.02;
+
+    if (type === 'send') {
+      // Two-tone blip: 660 Hz then 880 Hz, 80 ms each
+      [660, 880].forEach((freq, i) => {
+        const g = ac.createGain();
+        const osc = ac.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0, t + i * 0.05);
+        g.gain.linearRampToValueAtTime(0.22, t + i * 0.05 + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.05 + 0.09);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(t + i * 0.05); osc.stop(t + i * 0.05 + 0.1);
+      });
+    } else if (type === 'receive') {
+      // Rising chime: 520 → 780 Hz, 150 ms
+      const g = ac.createGain();
+      const osc = ac.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(520, t);
+      osc.frequency.linearRampToValueAtTime(780, t + 0.1);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.26, t + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t); osc.stop(t + 0.16);
+    } else if (type === 'reaction') {
+      // Bubble pop: triangle, 420 → 200 Hz, 80 ms
+      const g = ac.createGain();
+      const osc = ac.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(420, t);
+      osc.frequency.exponentialRampToValueAtTime(200, t + 0.07);
+      g.gain.setValueAtTime(0.18, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t); osc.stop(t + 0.09);
+    } else if (type === 'open') {
+      // Ascending three-step: 330, 440, 550 Hz
+      [330, 440, 550].forEach((freq, i) => {
+        const g = ac.createGain();
+        const osc = ac.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0, t + i * 0.06);
+        g.gain.linearRampToValueAtTime(0.16, t + i * 0.06 + 0.014);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.06 + 0.06);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(t + i * 0.06); osc.stop(t + i * 0.06 + 0.07);
+      });
+    } else if (type === 'notify') {
+      // Quiet tick: 1200 Hz, 35 ms
+      const g = ac.createGain();
+      const osc = ac.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 1200;
+      g.gain.setValueAtTime(0.09, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t); osc.stop(t + 0.04);
+    }
+  } catch { /* AudioContext unavailable or policy — silent */ }
+}
+
+
 /* Username click → always opens profile page */
 function ParticipantLink({ person, children, className }) {
   return person?.is_public && !person?.is_anonymous && person?.username
@@ -50,8 +221,16 @@ function ParticipantLink({ person, children, className }) {
     : <span className={className}>{children}</span>;
 }
 
-function Avatar({ person, small = false, index = 0 }) { const name = typeof person === 'string' ? person : displayName(person); const image = typeof person === 'object' ? (person?.avatar_url || '') : ''; return <span className={`avatar avatar-${participantTone(index, typeof person === 'string' ? null : person)} ${small ? 'avatar-small' : ''}`} aria-label={`${name} avatar`}>{image ? <img src={image} alt="" /> : initials(name)}</span>; }
+function Avatar({ person, small = false, index = 0 }) {
+  const isAnon = typeof person === 'object' && (person?.is_anonymous || person?.is_public === false);
+  const name = typeof person === 'string' ? person : displayName(person);
+  const image = isAnon
+    ? (person?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`)
+    : (typeof person === 'object' ? (person?.avatar_url || '') : '');
+  return <span className={`avatar avatar-${participantTone(index, typeof person === 'string' ? null : person)} ${small ? 'avatar-small' : ''}`} aria-label={`${name} avatar`}>{image ? <img src={image} alt="" /> : initials(name)}</span>;
+}
 function Logo() { return <Link to="/" className="logo" aria-label="CCHAT home">C<span>CHAT</span><i>.</i></Link>; }
+function ThemeToggle({ dark, onToggle }) { return <button className="theme-toggle" onClick={onToggle} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`}>{dark ? <Sun size={16} /> : <Moon size={16} />}<span>{dark ? 'Light' : 'Dark'}</span></button>; }
 
 function Header({ dark, onToggle }) {
   const navigate = useNavigate();
@@ -59,34 +238,78 @@ function Header({ dark, onToggle }) {
   useEffect(() => { const sync = () => setUser(sessionUser()); window.addEventListener('storage', sync); window.addEventListener('cchat:auth-expired', sync); return () => { window.removeEventListener('storage', sync); window.removeEventListener('cchat:auth-expired', sync); }; }, []);
   const logout = async () => { try { if (token()) await axios.post('/api/auth/logout/', {}, authConfig()); } catch { /* local cleanup still matters */ } finally { clearSession(); navigate('/'); } };
   const openSearch = () => window.dispatchEvent(new Event('cchat:open-search'));
-  return <header className="site-header"><Logo /><div className="header-actions"><button className="icon-button search-toggle" onClick={openSearch} aria-label="Search threads"><Search size={18} /></button><Link className="header-link explore-link" to="/explore">Explore topics</Link><button className="theme-toggle" onClick={onToggle} aria-label={`Switch to ${dark ? 'light' : 'dark'} mode`}>{dark ? <Sun size={16} /> : <Moon size={16} />}<span>{dark ? 'Light' : 'Dark'}</span></button>{user ? <><Link className="login-link account-link" to={`/profile/${encodeURIComponent(user.username)}`}>@{user.username} <ArrowUpRight size={15} /></Link><Link className="icon-button" to="/inbox" aria-label="Inbox"><Users size={17} /></Link><button className="icon-button" onClick={logout} aria-label="Log out"><LogOut size={17} /></button></> : <Link className="login-link" to="/login">Log in <ArrowUpRight size={15} /></Link>}</div></header>;
+  return <header className="site-header"><Logo /><div className="header-actions"><button className="icon-button search-toggle" onClick={openSearch} aria-label="Search threads"><Search size={18} /></button><Link className="header-link explore-link" to="/explore">Explore topics</Link><ThemeToggle dark={dark} onToggle={onToggle} />{user ? <><Link className="login-link account-link" to={`/profile/${encodeURIComponent(user.username)}`}>@{user.username} <ArrowUpRight size={15} /></Link><Link className="icon-button" to="/inbox" aria-label="Inbox"><Users size={17} /></Link><button className="icon-button" onClick={logout} aria-label="Log out"><LogOut size={17} /></button></> : <Link className="login-link" to="/login">Log in <ArrowUpRight size={15} /></Link>}</div></header>;
 }
 
 function InlineSearch({ open, onClose }) {
   const [query, setQuery] = useState(''); const [results, setResults] = useState([]); const [loading, setLoading] = useState(false);
-  useEffect(() => { if (!open) return undefined; const timer = setTimeout(async () => { if (!query.trim()) { setResults([]); return; } setLoading(true); try { const response = await axios.get(`/api/search/conversations/?q=${encodeURIComponent(query.trim())}`, authConfig()); setResults(response.data || []); } finally { setLoading(false); } }, 300); return () => clearTimeout(timer); }, [open, query]);
+  useEffect(() => { if (!open) return undefined; const timer = setTimeout(async () => { if (!query.trim()) { setResults([]); return; } setLoading(true); try { const response = await axios.get(`/api/search/?q=${encodeURIComponent(query.trim())}`, authConfig()); setResults(response.data?.results || []); } catch { setResults([]); } finally { setLoading(false); } }, 260); return () => clearTimeout(timer); }, [open, query]);
   if (!open) return null;
-  return <section className="inline-search container" aria-label="Search conversations"><div className="inline-search-head"><div><span className="eyebrow">Explore the room</span><h2>Find a conversation.</h2></div><button className="inline-search-close" onClick={onClose} aria-label="Close search">×</button></div><input className="search-input" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search a phrase or username" aria-label="Search conversations" />{loading && <p className="sidebar-muted">Searching…</p>}{!loading && query && !results.length && <p className="empty-copy">No public conversations matched that search.</p>}<div className="search-results">{results.map((thread) => <ThreadCard key={thread.conversation_id} thread={thread} />)}</div></section>;
+  return <section className="inline-search container" aria-label="Search conversations"><div className="inline-search-head"><div><span className="eyebrow">Hybrid search · words + meaning</span><h2>Find the moment.</h2></div><button className="inline-search-close" onClick={onClose} aria-label="Close search">×</button></div><input className="search-input" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search exact phrases or ideas…" aria-label="Search messages" />{loading && <p className="sidebar-muted">Searching messages…</p>}{!loading && query && !results.length && <p className="empty-copy">No messages matched that search.</p>}<div className="search-results">{results.map((result) => <SearchResultCard key={result.message_id} result={result} />)}</div></section>;
 }
 
-function ReactionButton({ icon, label, count, onClick, active }) { return <button className={`reaction-button ${active ? 'is-active' : ''}`} onClick={onClick} aria-label={`React ${label}`}>{React.createElement(icon, { size: 14, strokeWidth: 2.4 })}<span className="reaction-count">{count ?? 0}</span></button>; }
+function SearchResultCard({ result }) {
+  const navigate = useNavigate();
+  const timestamp = result.timestamp ? new Date(result.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  return <button type="button" className="search-result-card" onClick={() => navigate(`/chat/${result.conversation_id}`)}><div className="search-result-topline"><span>CCHAT-{String(result.conversation_id).padStart(3, '0')}</span><time dateTime={result.timestamp}>{timestamp}</time></div><p>{result.message}</p><div className="search-result-meta"><strong>{result.conversation_label || 'Conversation'}</strong><span>by {result.sender || 'Anonymous'}</span>{result.is_private && <span className="pill-badge is-private">Private</span>}</div></button>;
+}
+
+function ReactionButton({ icon, label, count, onClick, active }) { return <button type="button" className={`reaction-button ${active ? 'is-active' : ''}`} onClick={(e) => { e.stopPropagation(); playSound('reaction'); onClick?.(); }} aria-label={`React ${label}`}>{React.createElement(icon, { size: 14, strokeWidth: 2.4 })}<span className="reaction-count">{count ?? 0}</span></button>; }
 function ReactionRow({ thread, onReact }) { return <div className="reaction-row"><ReactionButton icon={Flame} label="fire" count={thread.likes} onClick={() => onReact?.('like')} active={thread.user_reactions?.includes('like')} /><ReactionButton icon={Skull} label="skull" count={thread.dislikes} onClick={() => onReact?.('dislike')} active={thread.user_reactions?.includes('dislike')} /><ReactionButton icon={Heart} label="heart" count={thread.caps} onClick={() => onReact?.('cap')} active={thread.user_reactions?.includes('cap')} /></div>; }
 
 function ThreadCard({ thread, onReact }) {
+  const navigate = useNavigate();
   const participants = thread.participants || thread.chatters || [];
   const messages = (thread.messages || []).slice(-4);
-  return <article className="thread-card"><div className="thread-card-link"><div className="card-topline"><span className="thread-id">CCHAT-{String(thread.conversation_id).padStart(3, '0')}</span><span className="category">{thread._feed?.is_breakout ? 'BREAKOUT' : 'PUBLIC THREAD'}</span></div><Link to={`/chat/${thread.conversation_id}`}><h3>{participants.map(displayName).join(' × ')}</h3></Link><div className="card-participants">{participants.map((p, i) => <span className="participant-chip" key={`${p.id || p.username}-${i}`}><Avatar person={p} small index={i} /><ParticipantLink person={p}>{displayName(p)}</ParticipantLink></span>)}</div><div className="preview-stack">{messages.length ? messages.map((message, i) => <div className={`preview-line ${i === messages.length - 1 ? 'preview-fade' : ''}`} key={message.id || `${message.timestamp}-${i}`}><span>{(message.sender_username || 'ANON').toUpperCase()}</span><p>{message.text}</p></div>) : <div className="empty-copy">No messages yet.</div>}</div></div><div className="card-bottom"><ReactionRow thread={thread} onReact={onReact ? (type) => onReact(thread.conversation_id, type) : undefined} /><span className="card-stat"><Eye size={14} /> {thread.views ?? 0}</span><span className="card-time">{relativeTime(thread.updated_at || thread.created_at)}</span><Link className="open-thread" to={`/chat/${thread.conversation_id}`}>Open thread <ArrowUpRight size={15} /></Link></div></article>;
+  const handleCardClick = (e) => {
+    if (e.target.closest('a, button, input, textarea')) return;
+    navigate(`/chat/${thread.conversation_id}`);
+  };
+  return (
+    <article className="thread-card" onClick={handleCardClick} style={{ cursor: 'pointer' }}>
+      <div className="thread-card-link">
+        <div className="card-topline">
+          <span className="thread-id">CCHAT-{String(thread.conversation_id).padStart(3, '0')}</span>
+          <span className="category">{thread._feed?.is_breakout ? 'BREAKOUT' : 'PUBLIC THREAD'}</span>
+        </div>
+        <Link to={`/chat/${thread.conversation_id}`}><h3>{participants.map(displayName).join(' × ')}</h3></Link>
+        <div className="card-participants">
+          {participants.map((p, i) => (
+            <span className="participant-chip" key={`${p.id || p.username}-${i}`}>
+              <Avatar person={p} small index={i} />
+              <ParticipantLink person={p}>{displayName(p)}</ParticipantLink>
+            </span>
+          ))}
+        </div>
+        <div className="preview-stack">
+          {messages.length ? messages.map((message, i) => (
+            <div className={`preview-line ${i === messages.length - 1 ? 'preview-fade' : ''}`} key={message.id || `${message.timestamp}-${i}`}>
+              <span>{(message.sender_username || 'ANON').toUpperCase()}</span>
+              <p>{message.text}</p>
+            </div>
+          )) : <div className="empty-copy">No messages yet.</div>}
+        </div>
+      </div>
+      <div className="card-bottom">
+        <ReactionRow thread={thread} onReact={onReact ? (type) => onReact(thread.conversation_id, type) : undefined} />
+        <span className="card-stat"><Eye size={14} /> {thread.views ?? 0}</span>
+        <span className="card-time">{relativeTime(thread.updated_at || thread.created_at)}</span>
+        <Link className="open-thread" to={`/chat/${thread.conversation_id}`}>Open thread <ArrowUpRight size={15} /></Link>
+      </div>
+    </article>
+  );
 }
 
 function CreateThreadModal({ onClose, initialUsername = '' }) {
   const navigate = useNavigate();
   const [username, setUsername] = useState(initialUsername); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+  useEffect(() => { playSound('open'); }, []);
   const submit = async (event) => { event.preventDefault(); setLoading(true); setError(''); try { const response = await axios.post('/api/conversations/create/', { username }, authConfig()); onClose(); navigate(`/inbox/${response.data.id}`); } catch (err) { if (err.response?.status === 401) { clearSession(); navigate('/login?next=%2F&intent=create'); } else setError(err.response?.data?.error || 'Could not start that conversation.'); } finally { setLoading(false); } };
   return <div className="modal-backdrop" role="presentation" onClick={onClose}><section className="create-modal" role="dialog" aria-modal="true" aria-labelledby="create-thread-title" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Close">×</button><span className="eyebrow">New room</span><h2 id="create-thread-title">Who do you want to talk to?</h2>{error && <p className="auth-error" role="alert">{error}</p>}<form onSubmit={submit} className="auth-form"><label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="their_username" required autoFocus /></label><button className="button button-primary auth-submit" disabled={loading}>{loading ? 'Opening…' : 'Open conversation'} <ArrowUpRight size={17} /></button></form></section></div>;
 }
 
 function LandingPage() {
-  const [dark, setDark] = useState(false); const [threads, setThreads] = useState([]); const [landingStats, setLandingStats] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [createOpen, setCreateOpen] = useState(false); const [searchOpen, setSearchOpen] = useState(false); const location = useLocation(); const navigate = useNavigate();
+  const [dark, setDark] = useDarkMode(); const [threads, setThreads] = useState([]); const [landingStats, setLandingStats] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [createOpen, setCreateOpen] = useState(false); const [searchOpen, setSearchOpen] = useState(false); const location = useLocation(); const navigate = useNavigate();
   useEffect(() => { if (token() && new URLSearchParams(location.search).get('intent') === 'create') setCreateOpen(true); }, [location.search]);
   useEffect(() => { const open = () => setSearchOpen(true); window.addEventListener('cchat:open-search', open); return () => window.removeEventListener('cchat:open-search', open); }, []);
   useEffect(() => { let active = true; (async () => { try { const response = await axios.get('/api/chats/recommended/', authConfig()); if (!active) return; setThreads(response.data || []); localStorage.setItem('recommended_chats_ids', JSON.stringify((response.data || []).map((item) => item.conversation_id))); } catch (err) { if (err.response?.status !== 401 && active) setError('The public feed is quiet right now.'); } finally { if (active) setLoading(false); } })(); return () => { active = false; }; }, []);
@@ -102,6 +325,7 @@ function AmbientLayer() {
   useEffect(() => {
     const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws');
     const socket = new WebSocket(`${wsBase}/ws/ambient/`);
+    let lastNotify = 0;
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -112,6 +336,9 @@ function AmbientLayer() {
           return [...current, item];
         });
         window.setTimeout(() => setEvents((current) => current.filter((entry) => entry.id !== item.id)), 1200);
+        // Throttle notify sound to at most once every 3 s
+        const now = Date.now();
+        if (now - lastNotify > 3000) { lastNotify = now; playSound('notify'); }
       } catch { /* ignore malformed ambient messages */ }
     };
     return () => socket.close();
@@ -181,7 +408,23 @@ function isCurrentUserSender(message, currentUser, otherParticipant = null) {
   return false;
 }
 
-function Message({ message, currentUser, participants = [], onReact, isPublic: conversationIsPublic }) {
+function DeleteMessagesModal({ count, onCancel, onConfirm, deleting }) {
+  return (
+    <div className="delete-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
+      <section className="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+        <span className="eyebrow">PERMANENT ACTION</span>
+        <h2 id="delete-modal-title">Delete {count === 1 ? 'this message' : `${count} messages`}?</h2>
+        <p>{count === 1 ? 'This message will be removed from the conversation.' : 'These messages will be removed from the conversation.'}</p>
+        <div className="delete-modal-actions">
+          <button type="button" className="button" onClick={onCancel} disabled={deleting}>Keep {count === 1 ? 'message' : 'messages'}</button>
+          <button type="button" className="button button-primary" onClick={onConfirm} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Message({ message, currentUser, participants = [], onReact, onDelete, selectionMode, selected, onToggleSelect, isPublic: conversationIsPublic }) {
   const senderId = message.sender ?? message.sender_id;
   let participantIndex = participants.findIndex((p) => p.id && String(p.id) === String(senderId));
   if (participantIndex < 0 && message.sender_username) {
@@ -220,19 +463,45 @@ function Message({ message, currentUser, participants = [], onReact, isPublic: c
   const bgStyle = getMessageBgStyle(message);
 
   return (
-    <div className={`message-row ${visualRight ? 'message-mine' : 'message-other'}`}>
+    <div className={`message-row ${visualRight ? 'message-mine' : 'message-other'} ${selected ? 'is-selected' : ''} ${selectionMode ? 'is-selectable' : ''}`} onClick={() => { if (selectionMode && isMine) onToggleSelect(message.id); }} aria-selected={selectionMode ? selected : undefined}>
       <Avatar person={sender || senderName} small index={participantIndex >= 0 ? participantIndex : (visualRight ? 1 : 0)} />
       <div className="message-body">
+        {isMine && selectionMode && <span className={`message-selection-mark ${selected ? 'is-selected' : ''}`} aria-hidden="true">{selected ? '✓' : ''}</span>}
         <div className="message-meta">
           <ParticipantLink person={isMine ? null : sender}><strong>{isMine ? 'You' : senderName}</strong></ParticipantLink>
           <span>{message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'now'}</span>
         </div>
-        <p style={bgStyle}>{message.text}</p>
+        {message.message_type === 'image' || (message.attachment && /\.(png|jpe?g|gif|webp|svg)($|\?)/i.test(message.attachment)) ? (
+          <div className="message-attachment">
+            <img src={message.attachment} alt="attachment" className="message-attachment-image" />
+            {message.text && message.text !== 'Image attachment' && <p style={bgStyle}>{message.text}</p>}
+          </div>
+        ) : message.message_type === 'audio' || (message.attachment && /\.(mp3|wav|ogg|m4a|webm)($|\?)/i.test(message.attachment)) ? (
+          <div className="message-attachment">
+            <VoiceMessagePlayer src={message.attachment} text={message.text} />
+          </div>
+        ) : message.attachment ? (
+          <div className="message-attachment">
+            <a href={message.attachment} download target="_blank" rel="noopener noreferrer" className="message-attachment-file">
+              <Paperclip size={14} /> {message.text || 'Download file'}
+            </a>
+          </div>
+        ) : (
+          <p style={bgStyle}>{message.text}</p>
+        )}
         <div className="message-reactions">
+          {isMine && selectionMode && (
+            <span className="message-select-hint">{selected ? 'Selected' : 'Tap to select'}</span>
+          )}
+          {isMine && onDelete && (
+            <button type="button" className="message-delete-button" onClick={(e) => { e.stopPropagation(); onDelete(message.id); }} aria-label="Delete your message" title="Delete message">
+              <Trash2 size={14} />
+            </button>
+          )}
           <button
             type="button"
             className={`reaction-btn reaction-flame ${message.user_reaction === 'like' ? 'is-active' : ''}`}
-            onClick={(e) => onReact(message.id, 'like', e)}
+            onClick={(e) => { playSound('reaction'); onReact(message.id, 'like', e); }}
             aria-label="React with fire"
             title="Fire"
           >
@@ -242,7 +511,7 @@ function Message({ message, currentUser, participants = [], onReact, isPublic: c
           <button
             type="button"
             className={`reaction-btn reaction-heart ${message.user_reaction === 'smile' ? 'is-active' : ''}`}
-            onClick={(e) => onReact(message.id, 'smile', e)}
+            onClick={(e) => { playSound('reaction'); onReact(message.id, 'smile', e); }}
             aria-label="React with heart"
             title="Heart"
           >
@@ -252,7 +521,7 @@ function Message({ message, currentUser, participants = [], onReact, isPublic: c
           <button
             type="button"
             className={`reaction-btn reaction-skull ${message.user_reaction === 'dislike' ? 'is-active' : ''}`}
-            onClick={(e) => onReact(message.id, 'dislike', e)}
+            onClick={(e) => { playSound('reaction'); onReact(message.id, 'dislike', e); }}
             aria-label="React with skull"
             title="Skull"
           >
@@ -262,7 +531,7 @@ function Message({ message, currentUser, participants = [], onReact, isPublic: c
           <button
             type="button"
             className={`reaction-btn reaction-cap ${message.user_reaction === 'cap' ? 'is-active' : ''}`}
-            onClick={(e) => onReact(message.id, 'cap', e)}
+            onClick={(e) => { playSound('reaction'); onReact(message.id, 'cap', e); }}
             aria-label="React with cap"
             title="Cap"
           >
@@ -293,20 +562,18 @@ function EyeToggle({ isPublic, onToggle, disabled }) {
 }
 
 function ChatPage() {
-  const { id } = useParams(); const navigate = useNavigate(); const [dark, setDark] = useState(false); const [conversation, setConversation] = useState(null); const [messages, setMessages] = useState([]); const [currentUser, setCurrentUser] = useState(sessionUser()); const [participantChats, setParticipantChats] = useState({}); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [input, setInput] = useState(''); const [floating, setFloating] = useState([]); const socketRef = useRef(null); const streamRef = useRef(null); const moving = useRef(false); const pullRef = useRef({ amount: 0, direction: 0 });
+  const { id } = useParams(); const navigate = useNavigate(); const [dark, setDark] = useDarkMode(); const [conversation, setConversation] = useState(null); const [messages, setMessages] = useState([]); const [currentUser, setCurrentUser] = useState(sessionUser()); const [participantChats, setParticipantChats] = useState({}); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [input, setInput] = useState(''); const [floating, setFloating] = useState([]); const [selectionMode, setSelectionMode] = useState(false); const [selectedMessageIds, setSelectedMessageIds] = useState([]); const [deleteRequest, setDeleteRequest] = useState(null); const [deleting, setDeleting] = useState(false); const socketRef = useRef(null); const streamRef = useRef(null); const moving = useRef(false); const pullRef = useRef({ amount: 0, direction: 0 });
   const participants = conversation?.participants || [];
   const viewerParticipant = participants.find((p) => currentUser && String(p.id) === String(currentUser.id));
 
-  useEffect(() => { const button = document.querySelector('.conversation-head > button[aria-label="Bookmark thread"], .conversation-head > button[aria-label="Remove bookmark"]'); if (!button) return undefined; const handler = () => toggleBookmark(); button.addEventListener('click', handler); return () => button.removeEventListener('click', handler); }, [conversation?.is_bookmarked, id]);
-  useEffect(() => { const button = document.querySelector('.conversation-head > button[aria-label="Bookmark thread"], .conversation-head > button[aria-label="Remove bookmark"]'); if (!button) return; button.setAttribute('aria-label', conversation?.is_bookmarked ? 'Remove bookmark' : 'Bookmark thread'); button.setAttribute('aria-pressed', String(Boolean(conversation?.is_bookmarked))); button.classList.toggle('is-saved', Boolean(conversation?.is_bookmarked)); const svg = button.querySelector('svg'); if (svg) svg.setAttribute('fill', conversation?.is_bookmarked ? 'currentColor' : 'none'); }, [conversation?.is_bookmarked]);
   const ids = useMemo(() => { try { return JSON.parse(localStorage.getItem('recommended_chats_ids') || '[]').map(Number); } catch { return []; } }, [conversation]);
   const move = (delta) => { if (moving.current || ids.length < 2) return; const index = ids.indexOf(Number(id)); const next = ids[(index < 0 ? 0 : index + delta + ids.length) % ids.length]; if (!next || next === Number(id)) return; moving.current = true; const el = streamRef.current; if (el) el.style.transform = `translateY(${delta > 0 ? -100 : 100}px)`; setTimeout(() => navigate(`/chat/${next}`), 220); setTimeout(() => { moving.current = false; }, 650); };
   useEffect(() => { let settleTimer; const onWheel = (event) => { const el = streamRef.current; if (!el || moving.current) return; const hasInternalScroll = el.scrollHeight > el.clientHeight + 16; const atBottom = hasInternalScroll ? (el.scrollHeight - el.scrollTop <= el.clientHeight + 8) : (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24); const atTop = hasInternalScroll ? (el.scrollTop <= 8) : (window.scrollY <= 8); const direction = event.deltaY > 0 && atBottom ? 1 : event.deltaY < 0 && atTop ? -1 : 0; if (!direction) { pullRef.current = { amount: 0, direction: 0 }; el.style.transform = 'translateY(0)'; return; } const state = pullRef.current.direction === direction ? pullRef.current : { amount: 0, direction }; state.amount = Math.min(420, state.amount + Math.abs(event.deltaY) * 0.32); pullRef.current = state; el.style.transform = `translateY(${direction * -Math.min(120, state.amount * 0.38)}px)`; clearTimeout(settleTimer); settleTimer = setTimeout(() => { if (!moving.current && streamRef.current) { streamRef.current.style.transform = 'translateY(0)'; pullRef.current = { amount: 0, direction: 0 }; } }, 140); if (state.amount > 380) { pullRef.current = { amount: 0, direction: 0 }; move(direction); } }; window.addEventListener('wheel', onWheel, { passive: true }); return () => { clearTimeout(settleTimer); window.removeEventListener('wheel', onWheel); }; }, [id, ids]);
   useEffect(() => { let active = true; setLoading(true); setError(''); (async () => { try { const chatResponse = await axios.get(`/api/conversations/${id}/`, authConfig()); if (!active) return; setConversation(chatResponse.data.conversation); setMessages(chatResponse.data.messages || []); if (token()) { try { const profileResponse = await axios.get('/api/profile/', authConfig()); if (active && profileResponse.data) setCurrentUser({ ...sessionUser(), ...profileResponse.data }); } catch {} } } catch (err) { if (active) setError(err.response?.data?.error || 'This conversation is unavailable.'); } finally { if (active) setLoading(false); } })(); return () => { active = false; }; }, [id]);
   useEffect(() => { if (!participants.length) return; let active = true; (async () => { const next = {}; await Promise.all(participants.filter((person) => person.is_public).map(async (person) => { try { if (currentUser && String(currentUser.id) === String(person.id)) { const response = await axios.get('/api/conversations/', authConfig()); next[person.id] = (response.data || []).filter((item) => Number(item.id) !== Number(id)); } else { const response = await axios.get(`/api/profile/${encodeURIComponent(person.username)}/conversations/`, authConfig()); next[person.id] = response.data || []; } } catch { next[person.id] = []; } })); if (active) setParticipantChats(next); })(); return () => { active = false; }; }, [id, participants.length, currentUser?.id]);
-  useEffect(() => { const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws'); const query = token() ? `?token=${encodeURIComponent(token())}` : ''; const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`); socket.onmessage = (event) => { const data = JSON.parse(event.data); if (data.type === 'receive_message') setMessages((current) => [...current, { id: data.id, sender: data.sender_id || data.senderId, sender_username: data.sender_username, text: data.text, timestamp: data.timestamp }]); if (data.type === 'sponsorship_update' && data.sponsorship) setConversation((current) => ({ ...current, sponsorships: [data.sponsorship] })); }; socketRef.current = socket; return () => { socket.close(); socketRef.current = null; }; }, [id]);
-  const react = async (type) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { const response = await axios.post(`/api/conversations/${id}/react/`, { reaction_type: type }, authConfig()); setConversation((current) => ({ ...current, ...response.data })); } catch { /* keep the conversation readable */ } };
-  const toggleBookmark = async () => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { const response = await axios.post(`/api/conversations/${id}/bookmark/`, {}, authConfig()); setConversation((current) => ({ ...current, is_bookmarked: response.data.is_bookmarked })); } catch { setError('Could not save this room right now.'); } };
+  useEffect(() => { const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws'); const query = token() ? `?token=${encodeURIComponent(token())}` : ''; const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`); socket.onmessage = (event) => { const data = JSON.parse(event.data); if (data.type === 'receive_message') setMessages((current) => [...current, { id: data.id, sender: data.sender_id || data.senderId, sender_username: data.sender_username, text: data.text, timestamp: data.timestamp }]); if (data.type === 'message_deleted') setMessages((current) => current.filter((message) => String(message.id) !== String(data.messageId))); if (data.type === 'sponsorship_update' && data.sponsorship) setConversation((current) => ({ ...current, sponsorships: [data.sponsorship] })); }; socketRef.current = socket; return () => { socket.close(); socketRef.current = null; }; }, [id]);
+  const react = async (type) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { const response = await axios.post(`/api/conversations/${id}/react/`, { reaction_type: type }, authConfig()); setConversation((current) => ({ ...current, ...response.data, participants: current?.participants || [] })); } catch { /* keep the conversation readable */ } };
+  const toggleBookmark = async () => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { playSound('reaction'); const response = await axios.post(`/api/conversations/${id}/bookmark/`, {}, authConfig()); setConversation((current) => ({ ...current, is_bookmarked: response.data.is_bookmarked })); } catch { setError('Could not save this room right now.'); } };
 
   const floatReaction = (emoji, event) => {
     let left = window.innerWidth / 2;
@@ -333,14 +600,32 @@ function ChatPage() {
     }
     try {
       const response = await axios.post(`/api/messages/${messageId}/react/`, { reaction_type: type }, authConfig());
-      setMessages((current) => current.map((message) => (message.id === messageId ? { ...message, ...response.data } : message)));
+      setMessages((current) => current.map((message) => (message.id === messageId ? { ...message, ...response.data, sender_username: message.sender_username } : message)));
     } catch {}
+  };
+
+  const requestDeleteMessages = (messageIds) => {
+    const idsToDelete = [...new Set(messageIds.filter(Boolean))];
+    if (idsToDelete.length) setDeleteRequest(idsToDelete);
+  };
+  const deleteMessages = async () => {
+    if (!deleteRequest?.length) return;
+    setDeleting(true);
+    try {
+      await Promise.all(deleteRequest.map((messageId) => axios.delete(`/api/messages/${messageId}/delete/`, authConfig())));
+      setMessages((current) => current.filter((message) => !deleteRequest.includes(message.id)));
+      setSelectedMessageIds([]);
+      setSelectionMode(false);
+      setDeleteRequest(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Some messages could not be deleted.');
+    } finally { setDeleting(false); }
   };
 
   const voteSponsorship = async (sponsorshipId, accepted) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } const response = await axios.post(`/api/conversations/${id}/sponsorships/${sponsorshipId}/vote/`, { accepted }, authConfig()); setConversation((current) => ({ ...current, sponsorships: (current.sponsorships || []).map((item) => item.id === sponsorshipId ? { ...item, ...response.data } : item) })); };
   const send = async (event) => { event.preventDefault(); if (!input.trim()) return; if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } const text = input.trim(); setInput(''); if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify({ type: 'send_message', senderId: currentUser?.username, text })); else { try { const response = await axios.post('/api/messages/send/', { conversation_id: id, text }, authConfig()); setMessages((current) => [...current, response.data]); } catch (err) { setError(err.response?.data?.error || 'Message could not be sent.'); } } };
-  if (loading) return <div className="app-shell"><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="loading-state">Loading conversation…</main></div>;
-  if (error || !conversation) return <div className="app-shell"><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="empty-state container"><Link to="/" className="back-link"><ArrowLeft size={16} /> Back to feed</Link><h1>{error || 'Conversation unavailable.'}</h1></main></div>;
+  if (loading) return <div className={`app-shell ${dark ? 'theme-dark' : ''}`}><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="loading-state">Loading conversation…</main></div>;
+  if (error || !conversation) return <div className={`app-shell ${dark ? 'theme-dark' : ''}`}><Header dark={dark} onToggle={() => setDark(!dark)} /><main className="empty-state container"><Link to="/" className="back-link"><ArrowLeft size={16} /> Back to feed</Link><h1>{error || 'Conversation unavailable.'}</h1></main></div>;
   const sponsorship = conversation.sponsorships?.[0];
   const totalReactions = (conversation.likes ?? 0) + (conversation.dislikes ?? 0) + (conversation.caps ?? 0);
   return (
@@ -397,8 +682,22 @@ function ChatPage() {
               </h1>
               <p><span className="live-dot" /> {conversation.status || 'ACTIVE'} · {conversation.is_public ? 'public thread' : 'private thread'}</p>
             </div>
-            <div className="conversation-head-actions">
-              <button className="icon-button" aria-label="Bookmark thread"><Bookmark size={18} /></button>
+            <div className={`conversation-head-actions ${selectionMode ? 'selection-toolbar' : ''}`}>
+              {selectionMode ? <>
+                <button type="button" className="selection-close" onClick={() => { setSelectionMode(false); setSelectedMessageIds([]); }} aria-label="Cancel selection">×</button>
+                <strong>{selectedMessageIds.length} selected</strong>
+                <button type="button" className="selection-delete" disabled={!selectedMessageIds.length} onClick={() => requestDeleteMessages(selectedMessageIds)}><Trash2 size={15} /> Delete</button>
+              </> : <button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button>}
+              <button
+                type="button"
+                className={`icon-button bookmark-button ${conversation?.is_bookmarked ? 'is-saved' : ''}`}
+                onClick={toggleBookmark}
+                aria-label={conversation?.is_bookmarked ? 'Remove bookmark' : 'Bookmark thread'}
+                aria-pressed={Boolean(conversation?.is_bookmarked)}
+                title={conversation?.is_bookmarked ? 'Remove bookmark' : 'Bookmark thread'}
+              >
+                <Bookmark size={18} fill={conversation?.is_bookmarked ? 'currentColor' : 'none'} />
+              </button>
             </div>
           </div>
           {sponsorship && <div className={`sponsor-banner ${sponsorship.user1_accepted && sponsorship.user2_accepted ? 'sponsor-live' : 'sponsor-pending'}`}><strong>{sponsorship.user1_accepted && sponsorship.user2_accepted ? `Presented by ${sponsorship.sponsor_name}` : `Possible sponsor: ${sponsorship.sponsor_name}`}</strong>{sponsorship.sponsor_text && <span>{sponsorship.sponsor_text}</span>}{viewerParticipant && <div className="sponsor-actions"><button onClick={() => voteSponsorship(sponsorship.id, true)} disabled={(viewerParticipant.id === sponsorship.user1 && sponsorship.user1_accepted) || (viewerParticipant.id === sponsorship.user2 && sponsorship.user2_accepted)}>Accept</button><button onClick={() => voteSponsorship(sponsorship.id, false)}>Decline</button></div>}</div>}
@@ -410,6 +709,10 @@ function ChatPage() {
                 currentUser={currentUser}
                 participants={participants}
                 onReact={reactMessage}
+                onDelete={(messageId) => requestDeleteMessages([messageId])}
+                selectionMode={selectionMode}
+                selected={selectedMessageIds.includes(message.id)}
+                onToggleSelect={(messageId) => setSelectedMessageIds((current) => current.includes(messageId) ? current.filter((value) => value !== messageId) : [...current, messageId])}
                 isPublic={conversation.is_public}
               />
             )) : <p className="empty-state">No messages yet. Be the first voice in the room.</p>}
@@ -449,21 +752,23 @@ function ChatPage() {
           </div>
         </aside>
       </main>
+      {deleteRequest && <DeleteMessagesModal count={deleteRequest.length} onCancel={() => setDeleteRequest(null)} onConfirm={deleteMessages} deleting={deleting} />}
     </div>
   );
 }
 
 /* ─── INBOX: list of private conversations ─── */
-function PrivateConversationList({ conversations, activeId, loading }) {
+function PrivateConversationList({ conversations, activeId, loading, dark, onToggle }) {
   return (
     <aside className="private-inbox-list">
       <div className="private-inbox-list-head">
         <div className="private-inbox-top-actions">
           <Logo />
-          <Link to="/" className="back-link"><ArrowLeft size={14} /> Feed</Link>
+          <div className="private-inbox-actions"><ThemeToggle dark={dark} onToggle={onToggle} /><Link to="/" className="back-link"><ArrowLeft size={14} /> Feed</Link></div>
         </div>
         <span className="eyebrow">Private messages</span>
         <h1>Inbox</h1>
+        <div className="private-inbox-summary"><span><i className="live-dot" /> {conversations.length ? 'Room ready' : 'Quiet room'}</span><span>{conversations.length} {conversations.length === 1 ? 'conversation' : 'conversations'}</span></div>
       </div>
       {loading ? (
         <p className="private-muted">Loading conversations…</p>
@@ -480,7 +785,6 @@ function PrivateConversationList({ conversations, activeId, loading }) {
                 <Avatar person={conversation.other_participant || 'Anonymous'} small />
                 <span className="private-conversation-copy">
                   <span className="private-conversation-name-row">
-                    <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
                     <strong>{name}</strong>
                     <span
                       className={`eye-icon-mini ${conversation.is_public ? 'eye-open' : 'eye-closed'}`}
@@ -507,6 +811,7 @@ function PrivateConversationList({ conversations, activeId, loading }) {
 /* /inbox — redirect to first conversation or show empty state */
 function InboxPage() {
   const navigate = useNavigate();
+  const [dark, onToggle] = useDarkMode();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -518,16 +823,18 @@ function InboxPage() {
   }, [loading, conversations, navigate]);
   if (!token()) return null;
   return (
-    <div className="app-shell private-inbox-shell">
+    <div className={`app-shell private-inbox-shell ${dark ? 'theme-dark' : ''}`}>
       <main className="private-inbox-layout container">
-        <PrivateConversationList conversations={conversations} loading={loading} />
+        <PrivateConversationList conversations={conversations} loading={loading} dark={dark} onToggle={onToggle} />
         <section className="private-empty-pane">
+          <div className="private-empty-art" aria-hidden="true"><span>✳</span></div>
           <div className="card-topline">
             <span className="thread-id">YOUR ROOM</span>
             <span className="category">DIRECT MESSAGES</span>
           </div>
-          <h2>Select a conversation.</h2>
-          <p>Choose a private conversation from the index to continue where you left off, or start a new thread.</p>
+          <h2>Make room for a real conversation.</h2>
+          <p>Choose a private conversation from the index to continue where you left off. Your messages stay between the people in the room until you decide otherwise.</p>
+          <div className="private-empty-note"><span className="live-dot" /> Private by default <span>·</span> public by choice</div>
         </section>
       </main>
     </div>
@@ -537,6 +844,7 @@ function InboxPage() {
 /* /inbox/:id — individual private chat */
 function PrivateChatPage() {
   const { id } = useParams(); const navigate = useNavigate();
+  const [dark, onToggle] = useDarkMode();
   const [conversations, setConversations] = useState([]);
   const [conversation, setConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -544,9 +852,18 @@ function PrivateChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
+  const [deleteRequest, setDeleteRequest] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [eyeLoading, setEyeLoading] = useState(false);
   const socketRef = useRef(null);
   const streamRef = useRef(null);
+
+  const [recording, setRecording] = useState(false);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   const toggleEye = async () => {
     if (!token() || eyeLoading) return;
@@ -604,7 +921,25 @@ function PrivateChatPage() {
     const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`);
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      if (data.type === 'receive_message') setMessages((current) => [...current, { id: data.id, sender: data.sender_id || data.senderId, sender_username: data.sender_username, text: data.text, timestamp: data.timestamp }]);
+      if (data.type === 'receive_message') {
+        setMessages((current) => {
+          if (data.id && current.some((m) => m.id === data.id)) return current;
+          return [...current, {
+            id: data.id,
+            sender: data.sender_id || data.senderId,
+            sender_username: data.sender_username,
+            text: data.text,
+            timestamp: data.timestamp,
+            message_type: data.message_type,
+            attachment: data.attachment
+          }];
+        });
+        const myUsername = sessionUser()?.username;
+        if (data.sender_username && data.sender_username !== myUsername) playSound('receive');
+      }
+      if (data.type === 'message_deleted') {
+        setMessages((current) => current.filter((message) => String(message.id) !== String(data.messageId)));
+      }
     };
     socketRef.current = socket;
     return () => { socket.close(); socketRef.current = null; };
@@ -615,6 +950,7 @@ function PrivateChatPage() {
     const text = input.trim();
     if (!text) return;
     setInput('');
+    playSound('send');
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'send_message', senderId: currentUser?.username, text }));
     } else {
@@ -623,14 +959,98 @@ function PrivateChatPage() {
     }
   };
 
+  const requestDeleteMessages = (messageIds) => {
+    const idsToDelete = [...new Set(messageIds.filter(Boolean))];
+    if (idsToDelete.length) setDeleteRequest(idsToDelete);
+  };
+  const deleteMessages = async () => {
+    if (!deleteRequest?.length) return;
+    setDeleting(true);
+    try {
+      await Promise.all(deleteRequest.map((messageId) => axios.delete(`/api/messages/${messageId}/delete/`, authConfig())));
+      setMessages((current) => current.filter((message) => !deleteRequest.includes(message.id)));
+      setSelectedMessageIds([]);
+      setSelectionMode(false);
+      setDeleteRequest(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Some messages could not be deleted.');
+    } finally { setDeleting(false); }
+  };
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = '';
+    const isImg = file.type.startsWith('image/');
+    const isAud = file.type.startsWith('audio/');
+    const msgType = isImg ? 'image' : isAud ? 'audio' : 'file';
+    const formData = new FormData();
+    formData.append('conversation_id', id);
+    formData.append('message_type', msgType);
+    formData.append('attachment', file);
+    formData.append('text', file.name);
+    playSound('send');
+    try {
+      const response = await axios.post('/api/messages/send/', formData, authConfig());
+      setMessages((current) => {
+        if (current.some((m) => m.id === response.data.id)) return current;
+        return [...current, response.data];
+      });
+    } catch {
+      setError('File could not be uploaded.');
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (recording) {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        setRecording(false);
+      }
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const formData = new FormData();
+        formData.append('conversation_id', id);
+        formData.append('message_type', 'audio');
+        formData.append('attachment', blob, 'voice_message.webm');
+        formData.append('text', 'Voice message');
+        playSound('send');
+        try {
+          const response = await axios.post('/api/messages/send/', formData, authConfig());
+          setMessages((current) => {
+            if (current.some((m) => m.id === response.data.id)) return current;
+            return [...current, response.data];
+          });
+        } catch {
+          setError('Voice message could not be sent.');
+        }
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch {
+      setError('Could not access microphone.');
+    }
+  };
+
   if (!token()) return null;
   const otherName = displayName(conversation?.other_participant);
   const otherParticipant = conversation?.other_participant;
 
   return (
-    <div className="app-shell private-inbox-shell">
+    <div className={`app-shell private-inbox-shell ${dark ? 'theme-dark' : ''}`}>
       <main className="private-inbox-layout container">
-        <PrivateConversationList conversations={conversations} activeId={id} loading={loading} />
+        <PrivateConversationList conversations={conversations} activeId={id} loading={loading} dark={dark} onToggle={onToggle} />
         <section className="private-chat-pane">
           {loading ? (
             <div className="private-empty-pane"><p className="private-muted">Loading conversation…</p></div>
@@ -644,14 +1064,19 @@ function PrivateChatPage() {
                   <Avatar person={otherParticipant || otherName} small />
                   <div className="private-chat-head-copy">
                     <div className="private-chat-title-row">
-                      {otherParticipant?.is_public && otherParticipant?.username
+                      {otherParticipant?.username
                         ? <Link to={`/profile/${encodeURIComponent(otherParticipant.username)}`} className="private-chat-username"><h2>{otherName}</h2></Link>
                         : <h2>{otherName}</h2>}
                     </div>
                     <p><span className="live-dot" /> {conversation?.is_public ? 'public conversation' : 'private conversation'}</p>
                   </div>
                 </div>
-                <div className="private-chat-head-actions">
+                <div className={`private-chat-head-actions ${selectionMode ? 'selection-toolbar' : ''}`}>
+                  {selectionMode ? <>
+                    <button type="button" className="selection-close" onClick={() => { setSelectionMode(false); setSelectedMessageIds([]); }} aria-label="Cancel selection">×</button>
+                    <strong>{selectedMessageIds.length} selected</strong>
+                    <button type="button" className="selection-delete" disabled={!selectedMessageIds.length} onClick={() => requestDeleteMessages(selectedMessageIds)}><Trash2 size={15} /> Delete</button>
+                  </> : <button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button>}
                   <EyeToggle
                     isPublic={Boolean(conversation?.is_public)}
                     onToggle={toggleEye}
@@ -664,7 +1089,7 @@ function PrivateChatPage() {
                   const isMine = isCurrentUserSender(message, currentUser, otherParticipant);
                   const bgStyle = getMessageBgStyle(message);
                   return (
-                    <div className={`private-message-row ${isMine ? 'is-mine' : 'is-other'}`} key={message.id || `${message.timestamp}-${message.text}`}>
+                    <div className={`private-message-row ${isMine ? 'is-mine' : 'is-other'} ${selectionMode && isMine ? 'is-selectable' : ''} ${selectedMessageIds.includes(message.id) ? 'is-selected' : ''}`} key={message.id || `${message.timestamp}-${message.text}`} onClick={() => { if (selectionMode && isMine) setSelectedMessageIds((current) => current.includes(message.id) ? current.filter((value) => value !== message.id) : [...current, message.id]); }} aria-selected={selectionMode && isMine ? selectedMessageIds.includes(message.id) : undefined}>
                       <Avatar person={isMine ? (currentUser?.username || 'You') : (otherParticipant || otherName)} small />
                       <div className="private-message-body">
                         <div className="private-message-meta">
@@ -672,14 +1097,42 @@ function PrivateChatPage() {
                           <span>{message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'now'}</span>
                         </div>
                         <div className="private-message-bubble" style={bgStyle}>
-                          <p>{message.text}</p>
+                          {message.message_type === 'image' || (message.attachment && /\.(png|jpe?g|gif|webp|svg)($|\?)/i.test(message.attachment)) ? (
+                            <div className="message-attachment">
+                              <img src={message.attachment} alt="attachment" className="message-attachment-image" />
+                              {message.text && message.text !== 'Image attachment' && <p>{message.text}</p>}
+                            </div>
+                          ) : message.message_type === 'audio' || (message.attachment && /\.(mp3|wav|ogg|m4a|webm)($|\?)/i.test(message.attachment)) ? (
+                            <div className="message-attachment">
+                              <VoiceMessagePlayer src={message.attachment} text={message.text} />
+                            </div>
+                          ) : message.attachment ? (
+                            <div className="message-attachment">
+                              <a href={message.attachment} download target="_blank" rel="noopener noreferrer" className="message-attachment-file">
+                                <Paperclip size={14} /> {message.text || 'Download file'}
+                              </a>
+                            </div>
+                          ) : (
+                            <p>{message.text}</p>
+                          )}
                         </div>
+                        {isMine && <>
+                          {selectionMode && <span className={`message-selection-mark ${selectedMessageIds.includes(message.id) ? 'is-selected' : ''}`} aria-hidden="true">{selectedMessageIds.includes(message.id) ? '✓' : ''}</span>}
+                          <button type="button" className="private-message-delete" onClick={() => requestDeleteMessages([message.id])} aria-label="Delete your message" title="Delete message"><Trash2 size={14} /></button>
+                        </>}
                       </div>
                     </div>
                   );
                 }) : <p className="private-muted private-no-messages">No messages yet. Say hello.</p>}
               </div>
               <form className="private-composer" onSubmit={send}>
+                <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
+                <button type="button" className="composer-btn" onClick={() => fileInputRef.current?.click()} title="Attach file" aria-label="Attach file">
+                  <Paperclip size={17} />
+                </button>
+                <button type="button" className={`composer-btn ${recording ? 'is-recording' : ''}`} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label="Voice message">
+                  {recording ? <Square size={14} /> : <Mic size={17} />}
+                </button>
                 <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={`Message ${otherName}`} aria-label="Private message" />
                 <button type="submit" aria-label="Send private message"><Send size={17} /></button>
               </form>
@@ -687,6 +1140,7 @@ function PrivateChatPage() {
           )}
         </section>
       </main>
+      {deleteRequest && <DeleteMessagesModal count={deleteRequest.length} onCancel={() => setDeleteRequest(null)} onConfirm={deleteMessages} deleting={deleting} />}
     </div>
   );
 }
@@ -723,6 +1177,7 @@ function ProfileStats({ profile, className = '' }) {
 function ProfilePage() {
   const { username } = useParams();
   const navigate = useNavigate();
+  const [dark, setDark] = useDarkMode();
   const [profile, setProfile] = useState(null);
   const [chats, setChats] = useState([]);
   const [bookmarks, setBookmarks] = useState([]);
@@ -760,8 +1215,8 @@ function ProfilePage() {
   }, [query, isOwnProfile]);
 
   return (
-    <div className="app-shell">
-      <Header dark={false} onToggle={() => {}} />
+    <div className={`app-shell ${dark ? 'theme-dark' : ''}`}>
+      <Header dark={dark} onToggle={() => setDark(!dark)} />
       {error ? (
         <main className="empty-state container"><h1>{error}</h1></main>
       ) : (
@@ -853,7 +1308,6 @@ function ProfilePage() {
                         to={`/inbox/${chat.id}`}
                         key={chat.id}
                       >
-                        <span className="thread-id">CCHAT-{String(chat.id).padStart(3, '0')}</span>
                         <div className="account-conv-name">
                           <strong>{displayName(chat.other_participant) || 'Conversation'}</strong>
                           {isOwnProfile && (
@@ -887,7 +1341,6 @@ function ProfilePage() {
                         to={conversation.is_public ? `/chat/${conversation.id}` : `/inbox/${conversation.id}`}
                         key={conversation.id}
                       >
-                        <span className="thread-id">CCHAT-{String(conversation.id).padStart(3, '0')}</span>
                         <div className="account-conv-name">
                           <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
                           <span className={`pill-badge ${conversation.is_public ? 'is-public' : 'is-private'}`}>
@@ -935,7 +1388,7 @@ function SponsorshipAdminPage() {
 
 /* ─── EXPLORE TOPICS PAGE: /explore ─── */
 function ExplorePage() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useDarkMode();
   const [threads, setThreads] = useState([]);
   const [query, setQuery] = useState('');
   const [activeTopic, setActiveTopic] = useState('All');
@@ -1020,7 +1473,7 @@ function ExplorePage() {
 
 /* ─── ABOUT PAGE: /about ─── */
 function AboutPage() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useDarkMode();
   const navigate = useNavigate();
 
   return (
@@ -1095,7 +1548,7 @@ function AboutPage() {
 
 /* ─── PRIVACY PAGE: /privacy ─── */
 function PrivacyPage() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useDarkMode();
 
   return (
     <div className={`app-shell ${dark ? 'theme-dark' : ''}`}>
@@ -1158,7 +1611,7 @@ function PrivacyPage() {
 
 /* ─── HOW ANONYMITY WORKS PAGE: /how-anonymity-works ─── */
 function HowAnonymityWorksPage() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useDarkMode();
   const [demoPublic, setDemoPublic] = useState(false);
   const navigate = useNavigate();
 
