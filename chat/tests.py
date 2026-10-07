@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 from asgiref.sync import async_to_sync
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from .consumers import ChatConsumer
@@ -85,6 +86,28 @@ class CChatAPITestCase(TestCase):
         participants = {p['id']: p for p in response.data['conversation']['participants']}
         self.assertEqual(participants[self.bob.id]['username'], 'bob')
         self.assertFalse(participants[self.bob.id]['is_anonymous'])
+
+    def test_file_attachment_uses_optional_caption_without_defaulting_to_filename(self):
+        self.authenticate(self.alice)
+        upload = SimpleUploadedFile('private-notes.txt', b'notes', content_type='text/plain')
+        response = self.client.post('/api/messages/send/', {
+            'conversation_id': self.conversation.id,
+            'message_type': 'file',
+            'attachment': upload,
+        }, format='multipart')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['text'], 'File attachment')
+        self.assertNotIn('private-notes.txt', response.data['text'])
+
+        captioned = SimpleUploadedFile('private-notes-2.txt', b'notes', content_type='text/plain')
+        response = self.client.post('/api/messages/send/', {
+            'conversation_id': self.conversation.id,
+            'message_type': 'file',
+            'attachment': captioned,
+            'text': 'Read this later',
+        }, format='multipart')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['text'], 'Read this later')
 
     def test_participant_can_toggle_visibility_and_nonparticipant_cannot(self):
         self.authenticate(self.eve)

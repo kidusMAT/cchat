@@ -33,7 +33,36 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
+        if await self.is_authenticated_participant():
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'presence_update',
+                    'user_id': self.user.id,
+                    'online': True,
+                }
+            )
+            unread_ids = await self.mark_messages_read()
+            if unread_ids:
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'messages_read',
+                        'user_id': self.user.id,
+                        'message_ids': unread_ids,
+                    }
+                )
+
     async def disconnect(self, close_code):
+        if await self.is_authenticated_participant():
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'presence_update',
+                    'user_id': self.user.id,
+                    'online': False,
+                }
+            )
         # Leave room group
         await self.channel_layer.group_discard(
             self.room_group_name,
@@ -41,6 +70,35 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
 
     # ─── Database helpers ────────────────────────────────────────────────
+
+    @database_sync_to_async
+    def is_authenticated_participant(self):
+        from .models import Conversation
+
+        if not self.user or not self.user.is_authenticated:
+            return False
+        return Conversation.objects.filter(
+            id=self.chat_id,
+            participants=self.user,
+        ).exists()
+
+    @database_sync_to_async
+    def mark_messages_read(self):
+        from .models import Conversation, Message
+
+        if not self.user or not self.user.is_authenticated:
+            return []
+        if not Conversation.objects.filter(id=self.chat_id, participants=self.user).exists():
+            return []
+        unread_ids = list(
+            Message.objects.filter(
+                conversation_id=self.chat_id,
+                is_read=False,
+            ).exclude(sender=self.user).values_list('id', flat=True)
+        )
+        if unread_ids:
+            Message.objects.filter(id__in=unread_ids).update(is_read=True)
+        return unread_ids
 
     @database_sync_to_async
     def save_message(self, sender_id, text):
@@ -584,6 +642,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }
             )
 
+        elif message_type == 'mark_read':
+            unread_ids = await self.mark_messages_read()
+            if unread_ids:
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'messages_read',
+                        'user_id': self.user.id,
+                        'message_ids': unread_ids,
+                    }
+                )
+
+        elif message_type == 'presence_request':
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'presence_probe',
+                    'requester': self.channel_name,
+                }
+            )
+
         elif message_type == 'delete_message':
             message_id = data.get('messageId')
             if await self.delete_message_from_db(message_id):
@@ -870,6 +949,32 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'message_type': event.get('message_type', 'text'),
             'attachment': event.get('attachment', None),
             'poll_data': event.get('poll_data', None),
+        }))
+
+    async def presence_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'presence_update',
+            'user_id': event.get('user_id'),
+            'online': event.get('online', False),
+        }))
+
+    async def presence_probe(self, event):
+        if event.get('requester') == self.channel_name or not await self.is_authenticated_participant():
+            return
+        await self.channel_layer.send(
+            event['requester'],
+            {
+                'type': 'presence_update',
+                'user_id': self.user.id,
+                'online': True,
+            }
+        )
+
+    async def messages_read(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'messages_read',
+            'user_id': event.get('user_id'),
+            'message_ids': event.get('message_ids', []),
         }))
 
     async def chat_reaction(self, event):

@@ -53,6 +53,27 @@ def broadcast_ambient_reaction(reaction_type):
     cache.set('ambient:last_real_event_at', time.time(), timeout=120)
 
 
+def broadcast_message_reaction(message, reaction_type):
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'chat_{message.conversation_id}',
+            {
+                'type': 'chat_reaction',
+                'messageId': message.id,
+                'reactionType': reaction_type,
+                'likes': message.likes,
+                'dislikes': message.dislikes,
+                'caps': message.caps,
+                'smiles': message.smiles,
+                'dominant_reaction': message.dominant_reaction,
+                'chatId': message.conversation_id,
+            }
+        )
+    except Exception:
+        pass
+
+
 def mutually_blocked_user_ids(user):
     if not user or not user.is_authenticated:
         return []
@@ -1409,7 +1430,7 @@ def send_message(request):
         elif message_type == 'image':
             text = 'Image attachment'
         else:
-            text = attachment.name or 'File attachment'
+            text = 'File attachment'
 
     if attachment and message_type == 'text':
         content_type = getattr(attachment, 'content_type', '')
@@ -1524,6 +1545,7 @@ def react_to_message(request, message_id):
                 message.smiles += 1
     
     message.save()
+    broadcast_message_reaction(message, reaction_type)
     if should_broadcast:
         broadcast_ambient_reaction(reaction_type)
     
@@ -1571,9 +1593,12 @@ def remove_reaction(request, message_id):
             message.dislikes = max(0, message.dislikes - 1)
         elif reaction_type == 'cap':
             message.caps = max(0, message.caps - 1)
+        elif reaction_type == 'smile':
+            message.smiles = max(0, message.smiles - 1)
         
         message.save()
         reaction.delete()
+        broadcast_message_reaction(message, reaction_type)
         
         return Response({'message': 'Reaction removed'})
     except MessageReaction.DoesNotExist:
