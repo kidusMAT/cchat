@@ -1142,7 +1142,9 @@ def get_conversation(request, conversation_id):
     all_p = conversation.participants.all().order_by('id') # Force deterministic order
     
     for participant in all_p:
-        is_p_public = conversation.is_public_for_user(participant)
+        # A participant should always see their own real identity, even when
+        # that side of the conversation is anonymous to everyone else.
+        is_p_public = participant.id == request.user.id or conversation.is_public_for_user(participant)
         
         # --- Fetch other public chats for this participant ---
         participant_other_chats = []

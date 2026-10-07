@@ -78,6 +78,14 @@ class CChatAPITestCase(TestCase):
         self.assertEqual(response.data['messages'][0]['sender_username'], 'alice')
         self.assertTrue(AnonymousProfile.objects.filter(conversation=self.conversation, original_user=self.bob).exists())
 
+    def test_participant_sees_their_own_real_identity(self):
+        self.authenticate(self.bob)
+        response = self.client.get(f'/api/conversations/{self.conversation.id}/')
+        self.assertEqual(response.status_code, 200)
+        participants = {p['id']: p for p in response.data['conversation']['participants']}
+        self.assertEqual(participants[self.bob.id]['username'], 'bob')
+        self.assertFalse(participants[self.bob.id]['is_anonymous'])
+
     def test_participant_can_toggle_visibility_and_nonparticipant_cannot(self):
         self.authenticate(self.eve)
         denied = self.client.post(f'/api/conversations/{self.conversation.id}/toggle-visibility/')
@@ -409,4 +417,3 @@ class JWTBlacklistConfigurationTest(TestCase):
     def test_blacklist_app_is_installed(self):
         from django.conf import settings
         self.assertIn('rest_framework_simplejwt.token_blacklist', settings.INSTALLED_APPS)
-

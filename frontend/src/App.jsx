@@ -606,7 +606,17 @@ function EyeToggle({ isPublic, onToggle, disabled }) {
 
 function ChatPage() {
   const { id } = useParams(); const navigate = useNavigate(); const [dark, setDark] = useDarkMode(); const [conversation, setConversation] = useState(null); const [messages, setMessages] = useState([]); const [currentUser, setCurrentUser] = useState(sessionUser()); const [participantChats, setParticipantChats] = useState({}); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [input, setInput] = useState(''); const [floating, setFloating] = useState([]); const [selectionMode, setSelectionMode] = useState(false); const [selectedMessageIds, setSelectedMessageIds] = useState([]); const [deleteRequest, setDeleteRequest] = useState(null); const [deleting, setDeleting] = useState(false); const [reportTarget, setReportTarget] = useState(null); const [reporting, setReporting] = useState(false); const [resumeMessageId, setResumeMessageId] = useState(null); const resumeApplied = useRef(false); const socketRef = useRef(null); const streamRef = useRef(null); const moving = useRef(false); const pullRef = useRef({ amount: 0, direction: 0 }); const touchStartRef = useRef(null);
-  const participants = conversation?.participants || [];
+  const participants = useMemo(() => (conversation?.participants || []).map((person) => {
+    if (!currentUser || String(person.id) !== String(currentUser.id)) return person;
+    return {
+      ...person,
+      username: currentUser.username,
+      avatar: currentUser.avatar || person.avatar,
+      avatar_url: currentUser.avatar_url || person.avatar_url,
+      is_anonymous: false,
+      is_public: true,
+    };
+  }), [conversation, currentUser]);
   const viewerParticipant = participants.find((p) => currentUser && String(p.id) === String(currentUser.id));
 
   useEffect(() => {
