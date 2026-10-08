@@ -975,7 +975,7 @@ def search_users(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def get_profile_conversations(request, username):
     """Return the public conversations owned by a user's visibility settings."""
     profile_user = get_object_or_404(User, username=username, is_active=True)

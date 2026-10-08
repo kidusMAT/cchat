@@ -212,11 +212,17 @@ class CChatAPITestCase(TestCase):
         private.participants.add(self.alice, self.eve)
         ChatVisibility.objects.create(user=self.alice, conversation=private, is_public=False)
         ChatVisibility.objects.create(user=self.eve, conversation=private, is_public=True)
+        self.authenticate(self.eve)
         self.assertEqual(self.client.get('/api/profile/alice/conversations/').status_code, 200)
         self.assertEqual([item['id'] for item in self.client.get('/api/profile/alice/conversations/').data], [self.conversation.id])
-        self.authenticate(self.eve)
         self.client.post('/api/block/alice/')
         self.assertEqual(self.client.get('/api/profile/alice/conversations/').data, [])
+
+    def test_profile_conversations_require_authentication(self):
+        ChatVisibility.objects.filter(conversation=self.conversation, user=self.alice).update(is_public=True)
+        self.client.force_authenticate(user=None)
+        response = self.client.get('/api/profile/alice/conversations/')
+        self.assertEqual(response.status_code, 401)
 
     def test_conversation_search_never_returns_private_content(self):
         ChatVisibility.objects.filter(conversation=self.conversation, user=self.alice).update(is_public=True)
