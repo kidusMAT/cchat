@@ -33,18 +33,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', os.environ.get('SECRET_KEY', 'd
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = [
-    host.strip() for host in os.environ.get(
-        'ALLOWED_HOSTS',
-        'localhost,127.0.0.1,.vercel.app,.now.sh,.render.com,.railway.app'
-    ).split(',') if host.strip()
-]
-
-vercel_url = os.environ.get('VERCEL_URL')
-if vercel_url and vercel_url not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(vercel_url)
-if '*' not in ALLOWED_HOSTS and os.environ.get('ALLOW_ALL_HOSTS', 'False').lower() == 'true':
-    ALLOWED_HOSTS.append('*')
+ALLOWED_HOSTS = ['*']
 
 AMBIENT_SIMULATION_ENABLED = os.environ.get('AMBIENT_SIMULATION_ENABLED', 'True').lower() == 'true'
 
