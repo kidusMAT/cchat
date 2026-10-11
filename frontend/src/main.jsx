@@ -7,7 +7,7 @@ import './index.css'
 const GOOGLE_CLIENT_ID = "160212344256-67s9j7buvetqbp1blcn9vl0mbquet5bh.apps.googleusercontent.com";
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID} locale="en">
         <App />
     </GoogleOAuthProvider>,
 )

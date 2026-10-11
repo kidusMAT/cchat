@@ -215,8 +215,19 @@ a { text-decoration:none; }
 .private-conversation-name-row { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
 .private-conversation-name-row strong { font-size:13px; letter-spacing:-.02em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .private-conversation-name-row .thread-id { font-size:9px; flex-shrink:0; }
-.private-conversation-copy small { color:var(--muted); font:10px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.private-conversation-copy small { color:var(--muted); font:10px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:4px; }
+.private-conversation-copy small .last-msg-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .private-conversation-row svg { color:var(--accent); flex:0 0 auto; }
+.private-conversation-row .message-read-receipt svg,
+.message-read-receipt svg { color:inherit; flex:0 0 auto; }
+.message-read-receipt { display:inline-flex; align-items:center; vertical-align:middle; line-height:1; flex-shrink:0; }
+.message-read-receipt.is-read { color:#10b981; }
+.message-read-receipt.is-unread { color:var(--muted); }
+.private-message-meta .message-read-receipt { margin-left:4px; }
+.message-meta .message-read-receipt { margin-left:6px; }
+.other-chats .message-read-receipt { margin-right:4px; }
+.preview-line p .message-read-receipt { margin-right:4px; }
+.head-read-badge { display:inline-flex; align-items:center; gap:4px; }
 .private-muted { color:var(--muted); font:11px/1.5 var(--mono); }
 .private-inbox-list>.private-muted { padding:24px 0; }
 

@@ -1,11 +1,23 @@
 /* Hallmark · macrostructure: Marquee + live index · tone: tactile editorial · anchor hue: hot-pink */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserRouter as Router, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Bookmark, ChevronRight, Eye, EyeOff, Flame, Flag, Heart, LogOut, Menu, Mic, Moon, Paperclip, Pause, Play, Search, Send, Skull, Sparkles, Square, Sun, Trash2, Users, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Bookmark, Check, CheckCheck, ChevronRight, Eye, EyeOff, Flame, Flag, Heart, LogOut, Menu, Mic, Moon, Paperclip, Pause, Play, Search, Send, Skull, Sparkles, Square, Sun, Trash2, Users, X } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import SettingsPage from './Settings.jsx';
 import './index.css';
+
+function ReadReceipt({ isRead, className = '' }) {
+  return (
+    <span
+      className={`message-read-receipt ${isRead ? 'is-read' : 'is-unread'} ${className}`}
+      title={isRead ? 'Read (one right)' : 'Unread (two rights)'}
+      aria-label={isRead ? 'Read' : 'Unread'}
+    >
+      {isRead ? <CheckCheck size={13} strokeWidth={2} /> : <Check size={13} strokeWidth={2.5} />}
+    </span>
+  );
+}
 
 function VoiceMessagePlayer({ src, text }) {
   const audioRef = useRef(null);
@@ -297,7 +309,10 @@ function ThreadCard({ thread, onReact }) {
           {messages.length ? messages.map((message, i) => (
             <div className={`preview-line ${i === messages.length - 1 ? 'preview-fade' : ''}`} key={message.id || `${message.timestamp}-${i}`}>
               <span>{(message.sender_username || 'ANON').toUpperCase()}</span>
-              <p>{message.text}</p>
+              <p>
+                {i === messages.length - 1 && <ReadReceipt isRead={Boolean(message.is_read)} />}
+                {message.text}
+              </p>
             </div>
           )) : <div className="empty-copy">No messages yet.</div>}
         </div>
@@ -466,7 +481,7 @@ function ReportModal({ target, onClose, onSubmit, submitting }) {
   );
 }
 
-function Message({ message, historyKey, currentUser, participants = [], onReact, onDelete, onReport, selectionMode, selected, onToggleSelect, isPublic: conversationIsPublic }) {
+function Message({ message, isLast, historyKey, currentUser, participants = [], onReact, onDelete, onReport, selectionMode, selected, onToggleSelect, isPublic: conversationIsPublic }) {
   const senderId = message.sender ?? message.sender_id;
   let participantIndex = participants.findIndex((p) => p.id && String(p.id) === String(senderId));
   if (participantIndex < 0 && message.sender_username) {
@@ -512,6 +527,7 @@ function Message({ message, historyKey, currentUser, participants = [], onReact,
         <div className="message-meta">
           <ParticipantLink person={isMine ? null : sender}><strong>{isMine ? 'You' : senderName}</strong></ParticipantLink>
           <span>{message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'now'}</span>
+          {isLast && <ReadReceipt isRead={Boolean(message.is_read)} />}
         </div>
         {message.message_type === 'image' || (message.attachment && /\.(png|jpe?g|gif|webp|svg)($|\?)/i.test(message.attachment)) ? (
           <div className="message-attachment">
@@ -692,7 +708,34 @@ function ChatPage() {
   }, [id, ids]);
   useEffect(() => { let active = true; setLoading(true); setError(''); (async () => { try { const chatResponse = await axios.get(`/api/conversations/${id}/`, authConfig()); if (!active) return; setConversation(chatResponse.data.conversation); setMessages(chatResponse.data.messages || []); if (token()) { try { const profileResponse = await axios.get('/api/profile/', authConfig()); if (active && profileResponse.data) setCurrentUser({ ...sessionUser(), ...profileResponse.data }); } catch {} } } catch (err) { if (active) setError(err.response?.data?.error || 'This conversation is unavailable.'); } finally { if (active) setLoading(false); } })(); return () => { active = false; }; }, [id]);
   useEffect(() => { if (!participants.length) return; let active = true; (async () => { const next = {}; await Promise.all(participants.filter((person) => person.is_public).map(async (person) => { try { if (currentUser && String(currentUser.id) === String(person.id)) { const response = await axios.get('/api/conversations/', authConfig()); next[person.id] = (response.data || []).filter((item) => Number(item.id) !== Number(id)); } else { const response = await axios.get(`/api/profile/${encodeURIComponent(person.username)}/conversations/`, authConfig()); next[person.id] = response.data || []; } } catch { next[person.id] = []; } })); if (active) setParticipantChats(next); })(); return () => { active = false; }; }, [id, participants.length, currentUser?.id]);
-  useEffect(() => { const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws'); const query = token() ? `?token=${encodeURIComponent(token())}` : ''; const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`); socket.onmessage = (event) => { const data = JSON.parse(event.data); if (data.type === 'receive_message') setMessages((current) => [...current, { id: data.id, sender: data.sender_id || data.senderId, sender_username: data.sender_username, text: data.text, timestamp: data.timestamp }]); if (data.type === 'message_deleted') setMessages((current) => current.filter((message) => String(message.id) !== String(data.messageId))); if (data.type === 'sponsorship_update' && data.sponsorship) setConversation((current) => ({ ...current, sponsorships: [data.sponsorship] })); }; socketRef.current = socket; return () => { socket.close(); socketRef.current = null; }; }, [id]);
+  useEffect(() => {
+    const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws');
+    const query = token() ? `?token=${encodeURIComponent(token())}` : '';
+    const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`);
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'receive_message') {
+        setMessages((current) => [...current, {
+          id: data.id,
+          sender: data.sender_id || data.senderId,
+          sender_username: data.sender_username,
+          text: data.text,
+          timestamp: data.timestamp,
+          is_read: Boolean(data.is_read)
+        }]);
+      }
+      if (data.type === 'messages_read') {
+        const readIds = data.message_ids || [];
+        setMessages((current) => current.map((m) =>
+          readIds.includes(m.id) ? { ...m, is_read: true } : m
+        ));
+      }
+      if (data.type === 'message_deleted') setMessages((current) => current.filter((message) => String(message.id) !== String(data.messageId)));
+      if (data.type === 'sponsorship_update' && data.sponsorship) setConversation((current) => ({ ...current, sponsorships: [data.sponsorship] }));
+    };
+    socketRef.current = socket;
+    return () => { socket.close(); socketRef.current = null; };
+  }, [id]);
   const react = async (type) => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { const response = await axios.post(`/api/conversations/${id}/react/`, { reaction_type: type }, authConfig()); setConversation((current) => ({ ...current, ...response.data, participants: current?.participants || [] })); } catch { /* keep the conversation readable */ } };
   const toggleBookmark = async () => { if (!token()) { navigate(`/login?next=%2Fchat%2F${id}`); return; } try { playSound('reaction'); const response = await axios.post(`/api/conversations/${id}/bookmark/`, {}, authConfig()); setConversation((current) => ({ ...current, is_bookmarked: response.data.is_bookmarked })); } catch { setError('Could not save this room right now.'); } };
 
@@ -782,7 +825,12 @@ function ChatPage() {
                   /* Sidebar other-chats: link to /chat/ since these are public conversations */
                   <Link to={`/chat/${chat.id}`} key={chat.id}>
                     <span>CCHAT-{String(chat.id).padStart(3, '0')}</span>
-                    {displayName(chat.other_participant) || chat.last_message?.text || 'Conversation'}
+                    <span className="other-chat-preview" style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {chat.last_message && <ReadReceipt isRead={Boolean(chat.last_message.is_read)} />}
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {displayName(chat.other_participant) || chat.last_message?.text || 'Conversation'}
+                      </span>
+                    </span>
                     <ChevronRight size={14} />
                   </Link>
                 )) : <span className="sidebar-muted">No public chats yet.</span>}
@@ -804,14 +852,23 @@ function ChatPage() {
                   </React.Fragment>
                 )) : 'Public conversation'}
               </h1>
-              <p><span className="live-dot" /> {conversation.status || 'ACTIVE'} · {conversation.is_public ? 'public thread' : 'private thread'}</p>
+              <p>
+                <span className="live-dot" /> {conversation.status || 'ACTIVE'} · {conversation.is_public ? 'public thread' : 'private thread'}
+                {messages.length > 0 && (
+                  <span className="head-read-badge">
+                    {' · Last message '}
+                    <ReadReceipt isRead={Boolean(messages[messages.length - 1].is_read)} />
+                    {messages[messages.length - 1].is_read ? 'Read' : 'Unread'}
+                  </span>
+                )}
+              </p>
             </div>
             <div className={`conversation-head-actions ${selectionMode ? 'selection-toolbar' : ''}`}>
               {selectionMode ? <>
                 <button type="button" className="selection-close" onClick={() => { setSelectionMode(false); setSelectedMessageIds([]); }} aria-label="Cancel selection">×</button>
                 <strong>{selectedMessageIds.length} selected</strong>
                 <button type="button" className="selection-delete" disabled={!selectedMessageIds.length} onClick={() => requestDeleteMessages(selectedMessageIds)}><Trash2 size={15} /> Delete</button>
-              </> : <><button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button><button type="button" className="report-thread-button" onClick={() => setReportTarget({ type: 'conversation' })} aria-label="Report conversation" title="Report conversation"><Flag size={16} /></button></>}
+              </> : <button type="button" className="report-thread-button" onClick={() => setReportTarget({ type: 'conversation' })} aria-label="Report conversation" title="Report conversation"><Flag size={16} /></button>}
               <button
                 type="button"
                 className={`icon-button bookmark-button ${conversation?.is_bookmarked ? 'is-saved' : ''}`}
@@ -826,14 +883,16 @@ function ChatPage() {
           </div>
           {sponsorship && <div className={`sponsor-banner ${sponsorship.user1_accepted && sponsorship.user2_accepted ? 'sponsor-live' : 'sponsor-pending'}`}>{sponsorship.sponsor_logo && <img src={resolveMediaUrl(sponsorship.sponsor_logo)} alt={`${sponsorship.sponsor_name} logo`} className="sponsor-logo" />}<div className="sponsor-copy"><strong>{sponsorship.user1_accepted && sponsorship.user2_accepted ? `Presented by ${sponsorship.sponsor_name}` : `Possible sponsor: ${sponsorship.sponsor_name}`}</strong>{(sponsorship.sponsor_description || sponsorship.sponsor_text) && <span>{sponsorship.sponsor_description || sponsorship.sponsor_text}</span>}{sponsorship.attached_message_link && <Link className="sponsor-message-link" to={sponsorship.attached_message_link}>View attached message <ArrowUpRight size={13} /></Link>}</div>{viewerParticipant && <div className="sponsor-actions"><button onClick={() => voteSponsorship(sponsorship.id, true)} disabled={(viewerParticipant.id === sponsorship.user1 && sponsorship.user1_accepted) || (viewerParticipant.id === sponsorship.user2 && sponsorship.user2_accepted)}>Accept</button><button onClick={() => voteSponsorship(sponsorship.id, false)}>Decline</button></div>}</div>}
           <div className="conversation-stream" ref={streamRef}>
-            {messages.length ? messages.map((message) => {
+            {messages.length ? messages.map((message, index) => {
               const historyKey = String(message.id || `${message.timestamp}-${message.text}`);
+              const isLast = index === messages.length - 1;
               return (
                 <React.Fragment key={historyKey}>
                   {String(resumeMessageId) === historyKey && <div className="reading-history-marker" aria-label="You were here"><span>You were here</span></div>}
                   <Message
                     historyKey={historyKey}
                     message={message}
+                    isLast={isLast}
                     currentUser={currentUser}
                     participants={participants}
                     onReact={reactMessage}
@@ -927,7 +986,12 @@ function PrivateConversationList({ conversations, activeId, loading, dark, onTog
                       {conversation.is_public ? <Eye size={13} /> : <EyeOff size={13} />}
                     </span>
                   </span>
-                  <small>{conversation.last_message?.text || 'No messages yet.'}</small>
+                  <small>
+                    {conversation.last_message && (
+                      <ReadReceipt isRead={Boolean(conversation.last_message.is_read)} />
+                    )}
+                    <span className="last-msg-text">{conversation.last_message?.text || 'No messages yet.'}</span>
+                  </small>
                 </span>
                 <ChevronRight size={15} />
               </Link>
@@ -1024,6 +1088,7 @@ function PrivateChatPage() {
       axios.get('/api/conversations/', authConfig()),
       axios.get(`/api/conversations/${id}/`, authConfig()),
       axios.get('/api/profile/', authConfig()),
+      axios.post(`/api/conversations/${id}/mark-read/`, {}, authConfig()).catch(() => {}),
     ]).then(([list, detail, profile]) => {
       if (!active) return;
       setConversations(list.data || []);
@@ -1064,11 +1129,26 @@ function PrivateChatPage() {
             text: data.text,
             timestamp: data.timestamp,
             message_type: data.message_type,
-            attachment: data.attachment
+            attachment: data.attachment,
+            is_read: Boolean(data.is_read)
           }];
         });
         const myUsername = sessionUser()?.username;
-        if (data.sender_username && data.sender_username !== myUsername) playSound('receive');
+        if (data.sender_username && data.sender_username !== myUsername) {
+          playSound('receive');
+          try { socket.send(JSON.stringify({ type: 'mark_read' })); } catch (_) {}
+        }
+      }
+      if (data.type === 'messages_read') {
+        const readIds = data.message_ids || [];
+        setMessages((current) => current.map((m) =>
+          readIds.includes(m.id) ? { ...m, is_read: true } : m
+        ));
+        setConversations((current) => current.map((c) =>
+          String(c.id) === String(id) && c.last_message && readIds.includes(c.last_message.id)
+            ? { ...c, last_message: { ...c.last_message, is_read: true } }
+            : c
+        ));
       }
       if (data.type === 'message_deleted') {
         setMessages((current) => current.filter((message) => String(message.id) !== String(data.messageId)));
@@ -1220,7 +1300,7 @@ function PrivateChatPage() {
                     <button type="button" className="selection-close" onClick={() => { setSelectionMode(false); setSelectedMessageIds([]); }} aria-label="Cancel selection">×</button>
                     <strong>{selectedMessageIds.length} selected</strong>
                     <button type="button" className="selection-delete" disabled={!selectedMessageIds.length} onClick={() => requestDeleteMessages(selectedMessageIds)}><Trash2 size={15} /> Delete</button>
-                  </> : <><button type="button" className="select-messages-button" onClick={() => setSelectionMode(true)} aria-label="Select messages" title="Select messages">Select</button><button type="button" className="report-thread-button" onClick={() => setReportTarget({ type: 'conversation' })} aria-label="Report conversation" title="Report conversation"><Flag size={16} /></button></>}
+                  </> : <button type="button" className="report-thread-button" onClick={() => setReportTarget({ type: 'conversation' })} aria-label="Report conversation" title="Report conversation"><Flag size={16} /></button>}
                   <EyeToggle
                     isPublic={Boolean(conversation?.is_public)}
                     onToggle={toggleEye}
@@ -1239,6 +1319,7 @@ function PrivateChatPage() {
                         <div className="private-message-meta">
                           <strong>{isMine ? 'You' : otherName}</strong>
                           <span>{message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'now'}</span>
+                          {isMine && <ReadReceipt isRead={Boolean(message.is_read)} />}
                         </div>
                         <div className="private-message-bubble" style={bgStyle}>
                           {message.message_type === 'image' || (message.attachment && /\.(png|jpe?g|gif|webp|svg)($|\?)/i.test(message.attachment)) ? (
@@ -1291,8 +1372,158 @@ function PrivateChatPage() {
   );
 }
 
-function LoginPage() { const navigate = useNavigate(); const location = useLocation(); const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const [googleLoading, setGoogleLoading] = useState(false); const next = new URLSearchParams(location.search).get('next') || '/'; const intent = new URLSearchParams(location.search).get('intent'); const finishLogin = (data) => { saveSession(data); navigate(intent === 'create' ? `${next}?intent=create` : next); }; const google = useGoogleLogin({ onSuccess: async (response) => { setGoogleLoading(true); setError(''); try { const result = await axios.post('/api/auth/google/', { token: response.access_token }); finishLogin(result.data); } catch (err) { setError(err.response?.data?.error || 'Google sign-in failed.'); } finally { setGoogleLoading(false); } }, onError: () => setError('Google sign-in was cancelled or failed.') }); const submit = async (event) => { event.preventDefault(); setLoading(true); setError(''); try { const response = await axios.post('/api/auth/login/', { username, password }); finishLogin(response.data); } catch (err) { setError(err.response?.data?.error || 'Invalid username or password'); } finally { setLoading(false); } }; return <AuthForm title="Log in to CCHAT." intro="Welcome back." submitLabel="Access the room" fields={[['Username', username, setUsername, 'text'], ['Password', password, setPassword, 'password']]} onSubmit={submit} loading={loading} error={error} onGoogle={google} googleLoading={googleLoading} footer={<span>New here? <Link to="/register">Create an identity</Link></span>} />; }
-function RegisterPage() { const navigate = useNavigate(); const location = useLocation(); const [form, setForm] = useState({ username: '', email: '', password: '', password2: '' }); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const update = (field) => (value) => setForm((current) => ({ ...current, [field]: value })); const submit = async (event) => { event.preventDefault(); if (form.password !== form.password2) { setError('Passwords do not match'); return; } setLoading(true); setError(''); try { const response = await axios.post('/api/auth/register/', form); saveSession(response.data); navigate(new URLSearchParams(location.search).get('next') || '/'); } catch (err) { const detail = err.response?.data; setError(detail?.username?.[0] || detail?.email?.[0] || detail?.password?.[0] || detail?.detail || 'Registration failed'); } finally { setLoading(false); } }; return <AuthForm title="Create your identity." intro="Find your people." submitLabel="Create identity" fields={[['Username', form.username, update('username'), 'text'], ['Email', form.email, update('email'), 'email'], ['Password', form.password, update('password'), 'password'], ['Confirm password', form.password2, update('password2'), 'password']]} onSubmit={submit} loading={loading} error={error} footer={<span>Already registered? <Link to="/login">Log in</Link></span>} />; }
+function LoginPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const next = new URLSearchParams(location.search).get('next') || '/';
+  const intent = new URLSearchParams(location.search).get('intent');
+
+  const finishLogin = (data) => {
+    saveSession(data);
+    navigate(intent === 'create' ? `${next}?intent=create` : next);
+  };
+
+  const google = useGoogleLogin({
+    prompt: 'select_account',
+    onSuccess: async (response) => {
+      setGoogleLoading(true);
+      setError('');
+      try {
+        const result = await axios.post('/api/auth/google/', { token: response.access_token });
+        finishLogin(result.data);
+      } catch (err) {
+        setError(err.response?.data?.error || 'Google sign-in failed.');
+      } finally {
+        setGoogleLoading(false);
+      }
+    },
+    onError: () => {
+      setGoogleLoading(false);
+      setError('Google sign-in was cancelled or failed.');
+    },
+    onNonOAuthError: () => {
+      setGoogleLoading(false);
+    }
+  });
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const response = await axios.post('/api/auth/login/', { username, password });
+      finishLogin(response.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Invalid username or password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AuthForm
+      title="Log in to CCHAT."
+      intro="Welcome back."
+      submitLabel="Access the room"
+      fields={[['Username', username, setUsername, 'text'], ['Password', password, setPassword, 'password']]}
+      onSubmit={submit}
+      loading={loading}
+      error={error}
+      onGoogle={() => {
+        setGoogleLoading(true);
+        setError('');
+        google();
+      }}
+      googleLoading={googleLoading}
+      footer={<span>New here? <Link to="/register">Create an identity</Link></span>}
+    />
+  );
+}
+
+function RegisterPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [form, setForm] = useState({ username: '', email: '', password: '', password2: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const next = new URLSearchParams(location.search).get('next') || '/';
+  const intent = new URLSearchParams(location.search).get('intent');
+
+  const finishLogin = (data) => {
+    saveSession(data);
+    navigate(intent === 'create' ? `${next}?intent=create` : next);
+  };
+
+  const google = useGoogleLogin({
+    prompt: 'select_account',
+    onSuccess: async (response) => {
+      setGoogleLoading(true);
+      setError('');
+      try {
+        const result = await axios.post('/api/auth/google/', { token: response.access_token });
+        finishLogin(result.data);
+      } catch (err) {
+        setError(err.response?.data?.error || 'Google sign-in failed.');
+      } finally {
+        setGoogleLoading(false);
+      }
+    },
+    onError: () => {
+      setGoogleLoading(false);
+      setError('Google sign-in was cancelled or failed.');
+    },
+    onNonOAuthError: () => {
+      setGoogleLoading(false);
+    }
+  });
+
+  const update = (field) => (value) => setForm((current) => ({ ...current, [field]: value }));
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (form.password !== form.password2) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const response = await axios.post('/api/auth/register/', form);
+      saveSession(response.data);
+      navigate(new URLSearchParams(location.search).get('next') || '/');
+    } catch (err) {
+      const detail = err.response?.data;
+      setError(detail?.username?.[0] || detail?.email?.[0] || detail?.password?.[0] || detail?.detail || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AuthForm
+      title="Create your identity."
+      intro="Find your people."
+      submitLabel="Create identity"
+      fields={[['Username', form.username, update('username'), 'text'], ['Email', form.email, update('email'), 'email'], ['Password', form.password, update('password'), 'password'], ['Confirm password', form.password2, update('password2'), 'password']]}
+      onSubmit={submit}
+      loading={loading}
+      error={error}
+      onGoogle={() => {
+        setGoogleLoading(true);
+        setError('');
+        google();
+      }}
+      googleLoading={googleLoading}
+      footer={<span>Already registered? <Link to="/login">Log in</Link></span>}
+    />
+  );
+}
 function AuthForm({ title, intro, submitLabel, fields, onSubmit, loading, error, onGoogle, googleLoading, footer }) { return <div className="app-shell auth-page"><Header dark={false} onToggle={() => {}} /><main className="auth-layout container"><div className="auth-intro"><span className="eyebrow">CCHAT / ACCESS</span><h1>{intro}<br /><span>here.</span></h1><p>One identity. As much anonymity as you want.</p></div><section className="auth-card"><div className="card-topline"><span className="thread-id">SECURE ENTRY</span><span className="category">CCHAT</span></div><h2>{title}</h2>{error && <div className="auth-error" role="alert">{error}</div>}{onGoogle && <><button type="button" className="google-auth-button" onClick={() => onGoogle()} disabled={googleLoading || loading}><span className="google-mark">G</span>{googleLoading ? 'Connecting…' : 'Continue with Google'}</button><div className="auth-divider"><span>or</span></div></>}<form onSubmit={onSubmit} className="auth-form">{fields.map(([label, value, onChange, type]) => <label key={label}>{label}<input type={type} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} required autoComplete={type === 'password' ? 'current-password' : label.toLowerCase()} /></label>)}<button className="button button-primary auth-submit" type="submit" disabled={loading || googleLoading}>{loading ? 'Working…' : submitLabel} <ArrowUpRight size={17} /></button></form><p className="auth-footnote">{footer}</p></section></main></div>; }
 function Footer() {
   return (
@@ -1452,13 +1683,18 @@ function ProfilePage() {
                     chats.map((chat) => (
                       <Link
                         className="account-conversation"
-                        to={`/inbox/${chat.id}`}
+                        to={`/chat/${chat.id}`}
                         key={chat.id}
                       >
                         <div className="account-conv-name">
                           <strong>{displayName(chat.other_participant) || 'Conversation'}</strong>
                         </div>
-                        <span>{chat.last_message?.text || 'No messages yet.'}</span>
+                        <span>
+                          {chat.last_message && (
+                            <ReadReceipt isRead={Boolean(chat.last_message.is_read)} />
+                          )}
+                          {chat.last_message?.text || 'No messages yet.'}
+                        </span>
                         <ChevronRight size={16} />
                       </Link>
                     ))
@@ -1480,13 +1716,18 @@ function ProfilePage() {
                     bookmarks.map((conversation) => (
                       <Link
                         className="account-conversation"
-                        to={conversation.is_public ? `/chat/${conversation.id}` : `/inbox/${conversation.id}`}
+                        to={`/chat/${conversation.id}`}
                         key={conversation.id}
                       >
                         <div className="account-conv-name">
                           <strong>{displayName(conversation.other_participant) || 'Conversation'}</strong>
                         </div>
-                        <span>{conversation.last_message?.text || 'No messages yet.'}</span>
+                        <span>
+                          {conversation.last_message && (
+                            <ReadReceipt isRead={Boolean(conversation.last_message.is_read)} />
+                          )}
+                          {conversation.last_message?.text || 'No messages yet.'}
+                        </span>
                         <ChevronRight size={16} />
                       </Link>
                     ))
