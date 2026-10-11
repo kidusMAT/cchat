@@ -15,33 +15,37 @@ import os
 import sys
 import dj_database_url
 from datetime import timedelta
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env file manually if it exists in the root directory
-env_path = BASE_DIR / '.env'
-if env_path.exists():
-    with open(env_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, val = line.split('=', 1)
-                val = val.strip().strip("'\"")
-                os.environ[key.strip()] = val
-
+# Load .env file manually / via dotenv if present
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-y0b$_9j1^)5$*kom#s$x=m@lmx0#551m6p5=fk_z_lc8$ar%f7')
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', os.environ.get('SECRET_KEY', 'django-insecure-y0b$_9j1^)5$*kom#s$x=m@lmx0#551m6p5=fk_z_lc8$ar%f7'))
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,.vercel.app,.render.com,.railway.app').split(',')
+ALLOWED_HOSTS = [
+    host.strip() for host in os.environ.get(
+        'ALLOWED_HOSTS',
+        'localhost,127.0.0.1,.vercel.app,.now.sh,.render.com,.railway.app'
+    ).split(',') if host.strip()
+]
+
+vercel_url = os.environ.get('VERCEL_URL')
+if vercel_url and vercel_url not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(vercel_url)
+if '*' not in ALLOWED_HOSTS and os.environ.get('ALLOW_ALL_HOSTS', 'False').lower() == 'true':
+    ALLOWED_HOSTS.append('*')
+
 AMBIENT_SIMULATION_ENABLED = os.environ.get('AMBIENT_SIMULATION_ENABLED', 'True').lower() == 'true'
 
 
@@ -65,6 +69,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -105,13 +110,23 @@ DATABASES = {
     }
 }
 
-if os.environ.get('DATABASE_URL') and (
-    not DEBUG or os.environ.get('USE_REMOTE_DATABASE', 'False') == 'True'
-):
+database_url = os.environ.get('DATABASE_URL')
+if database_url and ('test' not in sys.argv) and os.environ.get('USE_SQLITE') != '1':
+    is_serverless = os.environ.get('VERCEL') == '1' or 'pooler' in database_url or os.environ.get('SERVERLESS') == '1'
+    default_conn_age = 0 if is_serverless else 600
+    conn_max_age = int(os.environ.get('DB_CONN_MAX_AGE', default_conn_age))
+
     DATABASES['default'] = dj_database_url.config(
-        conn_max_age=600,
+        default=database_url,
+        conn_max_age=conn_max_age,
+        conn_health_checks=True,
         ssl_require=True
     )
+
+DATABASES['sqlite'] = {
+    'ENGINE': 'django.db.backends.sqlite3',
+    'NAME': BASE_DIR / 'db.sqlite3',
+}
 
 # Keep the test suite isolated from any DATABASE_URL in the developer's .env.
 if 'test' in sys.argv:
@@ -120,6 +135,7 @@ if 'test' in sys.argv:
         'NAME': BASE_DIR / 'db.sqlite3',
     }
     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+
 
 
 # Password validation
@@ -156,8 +172,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files (User uploads)
 MEDIA_URL = '/media/'
@@ -190,14 +207,29 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True'
+CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'True' if DEBUG else 'False').lower() in ('true', '1')
 
-CORS_ALLOWED_ORIGINS = os.environ.get(
-    'CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://127.0.0.1:5173'
-).split(',')
+CORS_ALLOWED_ORIGINS = [
+    origin.strip() for origin in os.environ.get(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000'
+    ).split(',') if origin.strip()
+]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.vercel\.app$",
+]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# CSRF Configuration
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in os.environ.get(
+        'CSRF_TRUSTED_ORIGINS',
+        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,https://*.vercel.app'
+    ).split(',') if origin.strip()
+]
+
 
 # Channels Configuration
 redis_url = os.environ.get('REDIS_TLS_URL', os.environ.get('REDIS_URL'))

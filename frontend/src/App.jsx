@@ -83,7 +83,7 @@ function VoiceMessagePlayer({ src, text }) {
   );
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '');
 axios.defaults.baseURL = API_URL;
 
 function sessionUser() {
@@ -350,7 +350,7 @@ function LandingPage() {
 function AmbientLayer() {
   const [events, setEvents] = useState([]);
   useEffect(() => {
-    const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws');
+    const wsBase = import.meta.env.VITE_WS_URL || (API_URL ? API_URL.replace(/^http/, 'ws') : ((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host));
     const socket = new WebSocket(`${wsBase}/ws/ambient/`);
     let lastNotify = 0;
     socket.onmessage = (event) => {
@@ -709,7 +709,7 @@ function ChatPage() {
   useEffect(() => { let active = true; setLoading(true); setError(''); (async () => { try { const chatResponse = await axios.get(`/api/conversations/${id}/`, authConfig()); if (!active) return; setConversation(chatResponse.data.conversation); setMessages(chatResponse.data.messages || []); if (token()) { try { const profileResponse = await axios.get('/api/profile/', authConfig()); if (active && profileResponse.data) setCurrentUser({ ...sessionUser(), ...profileResponse.data }); } catch {} } } catch (err) { if (active) setError(err.response?.data?.error || 'This conversation is unavailable.'); } finally { if (active) setLoading(false); } })(); return () => { active = false; }; }, [id]);
   useEffect(() => { if (!participants.length) return; let active = true; (async () => { const next = {}; await Promise.all(participants.filter((person) => person.is_public).map(async (person) => { try { if (currentUser && String(currentUser.id) === String(person.id)) { const response = await axios.get('/api/conversations/', authConfig()); next[person.id] = (response.data || []).filter((item) => Number(item.id) !== Number(id)); } else { const response = await axios.get(`/api/profile/${encodeURIComponent(person.username)}/conversations/`, authConfig()); next[person.id] = response.data || []; } } catch { next[person.id] = []; } })); if (active) setParticipantChats(next); })(); return () => { active = false; }; }, [id, participants.length, currentUser?.id]);
   useEffect(() => {
-    const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws');
+    const wsBase = import.meta.env.VITE_WS_URL || (API_URL ? API_URL.replace(/^http/, 'ws') : ((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host));
     const query = token() ? `?token=${encodeURIComponent(token())}` : '';
     const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`);
     socket.onmessage = (event) => {
@@ -1114,7 +1114,7 @@ function PrivateChatPage() {
 
   useEffect(() => {
     if (!id || !token()) return undefined;
-    const wsBase = import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws');
+    const wsBase = import.meta.env.VITE_WS_URL || (API_URL ? API_URL.replace(/^http/, 'ws') : ((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host));
     const query = `?token=${encodeURIComponent(token())}`;
     const socket = new WebSocket(`${wsBase}/ws/chat/${id}/${query}`);
     socket.onmessage = (event) => {
@@ -1203,7 +1203,6 @@ function PrivateChatPage() {
     formData.append('conversation_id', id);
     formData.append('message_type', msgType);
     formData.append('attachment', file);
-    formData.append('text', file.name);
     playSound('send');
     try {
       const response = await axios.post('/api/messages/send/', formData, authConfig());
@@ -1569,6 +1568,13 @@ function ProfilePage() {
   const isOwnProfile = currentUser && currentUser.username === username;
 
   useEffect(() => {
+    if (!token()) {
+      navigate(`/login?next=${encodeURIComponent(`/profile/${username}`)}`, { replace: true });
+    }
+  }, [navigate, username]);
+
+  useEffect(() => {
+    if (!token()) return;
     const fetches = [
       axios.get(`/api/profile/${encodeURIComponent(username)}/`, authConfig()),
       axios.get(`/api/profile/${encodeURIComponent(username)}/conversations/`, authConfig()),
@@ -1683,7 +1689,7 @@ function ProfilePage() {
                     chats.map((chat) => (
                       <Link
                         className="account-conversation"
-                        to={`/chat/${chat.id}`}
+                        to={isOwnProfile ? `/inbox/${chat.id}` : `/chat/${chat.id}`}
                         key={chat.id}
                       >
                         <div className="account-conv-name">
