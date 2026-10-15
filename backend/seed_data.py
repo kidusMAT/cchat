@@ -22,9 +22,13 @@ def seed():
         {'username': 'anon', 'handle': '@anonymous', 'display_name': 'Anonymous', 'avatar': '', 'bio': 'Mystery participant'},
     ]
 
+    from rest_framework.authtoken.models import Token
     profiles = {}
     for ud in users_data:
         user, _ = User.objects.get_or_create(username=ud['username'], defaults={'email': f"{ud['username']}@example.com"})
+        user.set_password('cchatpassword123')
+        user.save()
+        Token.objects.get_or_create(user=user)
         profile, _ = UserProfile.objects.get_or_create(
             user=user,
             defaults={

@@ -7,10 +7,43 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Node / Frontend
 node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+env/
+
+# Django
+*.sqlite3
+*.sqlite3-journal
+db.sqlite3
+staticfiles/
+media/
 
 # Editor directories and files
 .vscode/*
@@ -25,3 +58,4 @@ dist-ssr
 
 # Exclude files with sensitive data
 figma_page.html
+

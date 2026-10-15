@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Compass,
   Users,
@@ -32,6 +32,7 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import { SponsorshipPage } from './pages/SponsorshipPage';
 import { AfterHoursPage } from './pages/AfterHoursPage';
 import { MyChatsPage } from './pages/MyChatsPage';
+import { cchatApi, UserProfile, PublicExcerptItem, TopicItem } from './services/api';
 
 // Shared double chat-bubble logo icon
 const CchatLogoIcon = () => (
@@ -50,9 +51,10 @@ const CchatLogoIcon = () => (
 interface SidebarProps {
   activeNav: string;
   onNav: (nav: string) => void;
+  currentUser?: UserProfile | null;
 }
 
-function Sidebar({ activeNav, onNav }: SidebarProps) {
+function Sidebar({ activeNav, onNav, currentUser }: SidebarProps) {
   const navItems = [
     { id: 'Discover', icon: Compass, label: 'Discover' },
     { id: 'Following', icon: Users, label: 'Following' },
@@ -118,13 +120,13 @@ function Sidebar({ activeNav, onNav }: SidebarProps) {
             className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-80 transition-opacity"
           >
             <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
-              alt="Maya Chen"
+              src={currentUser?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"}
+              alt={currentUser?.display_name || "Maya Chen"}
               className="w-9 h-9 rounded-full object-cover border border-[#2b2b3d]"
             />
             <div className="min-w-0">
-              <div className="text-xs font-bold text-white truncate">Maya Chen</div>
-              <div className="text-[11px] text-slate-500 truncate">@mayamaybe</div>
+              <div className="text-xs font-bold text-white truncate">{currentUser?.display_name || "Maya Chen"}</div>
+              <div className="text-[11px] text-slate-500 truncate">{currentUser?.handle || "@mayamaybe"}</div>
             </div>
           </div>
           <button
@@ -166,12 +168,31 @@ function DiscoverPage({
 
   const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : n.toString();
 
-  const toggle = (key: keyof typeof reactions, type: 'heart' | 'cap' | 'skull' | 'fire') => {
+  const msgMap: Record<string, number> = { m1: 21, m2: 22, m3: 23, m4: 24, m5: 25, m6: 26 };
+
+  const toggle = async (key: keyof typeof reactions, type: 'heart' | 'cap' | 'skull' | 'fire') => {
     setReactions(prev => {
       const c = prev[key];
       const already = c.userReacted === type;
       return { ...prev, [key]: { ...c, [type]: already ? c[type] - 1 : c[type] + 1, userReacted: already ? null : type } };
     });
+    const msgId = msgMap[key];
+    if (msgId) {
+      try {
+        await cchatApi.reactMessage(msgId, type);
+      } catch (e) {
+        console.warn('Backend reaction sync:', e);
+      }
+    }
+  };
+
+  const handleToggleSave = async () => {
+    setSaved(!saved);
+    try {
+      await cchatApi.toggleSaveExcerpt(3);
+    } catch (e) {
+      console.warn('Backend toggle save:', e);
+    }
   };
 
   const handleTabClick = (tab: 'For you' | 'Following' | 'Fresh') => {
@@ -371,7 +392,7 @@ function DiscoverPage({
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => setSaved(!saved)}
+                <button onClick={handleToggleSave}
                   className={`p-2 rounded-lg transition-colors cursor-pointer ${saved ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-[#181826]'}`}>
                   <Bookmark className="w-4 h-4" />
                 </button>
@@ -1024,8 +1045,14 @@ function SavedPage() {
     },
   ]);
 
-  const toggleSaveCard = (id: string) => {
+  const toggleSaveCard = async (id: string) => {
     setCards(prev => prev.map(c => c.id === id ? { ...c, saved: !c.saved } : c));
+    const numId = id === 'c1' ? 3 : id === 'c2' ? 2 : 1;
+    try {
+      await cchatApi.toggleSaveExcerpt(numId);
+    } catch (e) {
+      console.warn('Backend toggle save in SavedPage:', e);
+    }
   };
 
   const fmt = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : n.toString());
@@ -1465,9 +1492,24 @@ function StartChatPage({ onNavigate }: { onNavigate?: (nav: string) => void }) {
     setSearchRecipient(person.name.split(' ')[0]);
   };
 
-  const handleSend = () => {
-    if (onNavigate) {
-      onNavigate('My chats');
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async () => {
+    if (!messageText.trim() || sending) return;
+    setSending(true);
+    try {
+      const handle = selectedRecipient?.handle || '@julespark';
+      await cchatApi.createChat(handle, messageText.trim(), selectedRecipient?.name || 'New Conversation');
+      if (onNavigate) {
+        onNavigate('My chats');
+      }
+    } catch (err: any) {
+      console.error('Failed to create chat:', err);
+      if (onNavigate) {
+        onNavigate('My chats');
+      }
+    } finally {
+      setSending(false);
     }
   };
 
@@ -1637,10 +1679,10 @@ function StartChatPage({ onNavigate }: { onNavigate?: (nav: string) => void }) {
 
                 <button
                   onClick={handleSend}
-                  disabled={!messageText.trim()}
+                  disabled={!messageText.trim() || sending}
                   className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-blue-600/25 transition-all cursor-pointer active:scale-98"
                 >
-                  Send private message
+                  {sending ? 'Sending...' : 'Send private message'}
                 </button>
               </div>
 
@@ -4122,6 +4164,7 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate }: TopicDetailPagePr
   const [activeTab, setActiveTab] = useState<'Popular' | 'Fresh'>('Popular');
   const [isFollowing, setIsFollowing] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedPreview, setCopiedPreview] = useState(false);
   const [bookmarked1, setBookmarked1] = useState(false);
   const [bookmarked2, setBookmarked2] = useState(false);
 
@@ -4804,16 +4847,25 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate }: TopicDetailPagePr
               {copiedLink ? '✓ Copied link to clipboard!' : 'Copy public-chat link'}
             </button>
             <button
-              onClick={() => alert('Excerpt preview generated!')}
+              onClick={() => {
+                if (navigator.clipboard) {
+                  navigator.clipboard.writeText(`${window.location.origin}/?topic=${encodeURIComponent(currentTopic)}`);
+                }
+                setCopiedPreview(true);
+                setTimeout(() => setCopiedPreview(false), 2500);
+              }}
               className="text-slate-300 hover:text-white font-medium block text-left cursor-pointer"
             >
-              Share excerpt preview
+              {copiedPreview ? '✓ Excerpt preview link copied!' : 'Share excerpt preview'}
             </button>
             <button
-              onClick={() => {}}
+              onClick={() => {
+                setCopiedLink(false);
+                setCopiedPreview(false);
+              }}
               className="text-slate-400 hover:text-slate-300 font-medium block text-left cursor-pointer"
             >
-              Cancel
+              Dismiss
             </button>
           </div>
           <p className="text-[10px] text-slate-500 leading-relaxed pt-2 border-t border-[#181826]">
@@ -4909,6 +4961,13 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate }: TopicDetailPagePr
 export function App() {
   const [activeNav, setActiveNav] = useState<string>("Tonight's picks");
   const [selectedTopic, setSelectedTopic] = useState<string>('#dating');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    cchatApi.getMe()
+      .then(user => setCurrentUser(user))
+      .catch(err => console.warn('User session check:', err));
+  }, []);
 
   const handleNavigate = (nav: string, topic?: string) => {
     if (topic) setSelectedTopic(topic);
@@ -4927,7 +4986,7 @@ export function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#09090f] text-slate-100 flex font-sans">
-      <Sidebar activeNav={activeNav} onNav={setActiveNav} />
+      <Sidebar activeNav={activeNav} onNav={setActiveNav} currentUser={currentUser} />
 
       {activeNav === 'Discover' && <DiscoverPage onNavigateTab={handleNavigateTab} onNavigate={handleNavigate} />}
       {activeNav === 'Following' && <FollowingPage onNavigateTab={handleNavigateTab} />}

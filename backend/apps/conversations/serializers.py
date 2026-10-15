@@ -7,12 +7,26 @@ class MessageSerializer(serializers.ModelSerializer):
     sender_handle = serializers.CharField(source='sender.handle', read_only=True)
     sender_avatar = serializers.CharField(source='sender.avatar_url', read_only=True)
     is_maya = serializers.SerializerMethodField()
+    is_self = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ['id', 'conversation', 'sender', 'sender_name', 'sender_handle', 'sender_avatar', 'is_maya', 'text', 'is_excerpt_eligible', 'created_at']
+        fields = ['id', 'conversation', 'sender', 'sender_name', 'sender_handle', 'sender_avatar', 'is_maya', 'is_self', 'text', 'is_excerpt_eligible', 'created_at']
+
+    def get_is_self(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            try:
+                return obj.sender == request.user.profile
+            except Exception:
+                pass
+        return False
 
     def get_is_maya(self, obj):
+        # Backwards compatible alias for frontend rendering of current user's bubbles
+        is_self = self.get_is_self(obj)
+        if is_self:
+            return True
         return obj.sender.handle == '@mayamaybe'
 
 
@@ -31,7 +45,9 @@ class ConversationSerializer(serializers.ModelSerializer):
 
     def get_participants_summary(self, obj):
         names = [p.display_name for p in obj.participants.all()]
-        return f"{' & '.join(names)} · just the two of you"
+        if len(names) <= 2:
+            return f"{' & '.join(names)} · just the two of you"
+        return f"{', '.join(names[:2])} and {len(names) - 2} more"
 
 
 class ConversationDetailSerializer(ConversationSerializer):

@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cchat_db
+    restart: always
+    environment:
+      POSTGRES_DB: cchat_db
+      POSTGRES_USER: cchat_user
+      POSTGRES_PASSWORD: cchat_secure_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cchat_user -d cchat_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cchat_backend
+    restart: always
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_SECRET_KEY: "prod-secret-key-replace-in-env-file-minimum-fifty-characters"
+      DJANGO_ALLOWED_HOSTS: "backend,localhost,127.0.0.1,web"
+      DATABASE_URL: "postgres://cchat_user:cchat_secure_pass@db:5432/cchat_db"
+      CORS_ALLOWED_ORIGINS: "http://localhost,http://127.0.0.1,http://localhost:5173"
+      SECURE_SSL_REDIRECT: "False" # Set to True when SSL terminated
+      SESSION_COOKIE_SECURE: "False"
+      CSRF_COOKIE_SECURE: "False"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cchat_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

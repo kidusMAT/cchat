@@ -1,11 +1,16 @@
-const API_BASE = 'http://127.0.0.1:8000/api';
+// Dynamic API base URL: defaults to relative '/api' or VITE_API_URL if provided
+const ENV_URL = import.meta.env.VITE_API_URL;
+const API_BASE = ENV_URL ? `${ENV_URL.replace(/\/$/, '')}/api` : '/api';
 
 export interface UserProfile {
   id: number;
+  username?: string;
+  email?: string;
   handle: string;
   display_name: string;
   avatar_url: string;
   bio: string;
+  created_at?: string;
 }
 
 export interface ChatSummary {
@@ -21,10 +26,13 @@ export interface ChatSummary {
 
 export interface ChatMessage {
   id: number;
+  conversation?: number;
+  sender?: number;
   sender_name: string;
   sender_handle: string;
   sender_avatar: string;
   is_maya: boolean;
+  is_self?: boolean;
   text: string;
   is_excerpt_eligible: boolean;
   created_at: string;
@@ -41,6 +49,24 @@ export interface ChatDetail extends ChatSummary {
   } | null;
 }
 
+export interface ExcerptMessage {
+  id: number;
+  text: string;
+  sender_display: string;
+  sender_handle: string | null;
+  sender_avatar: string | null;
+  is_anonymous: boolean;
+  reactions: {
+    heart: number;
+    cap: number;
+    skull: number;
+    fire: number;
+    user_reacted: string | null;
+    dominant: string;
+  };
+  created_at: string;
+}
+
 export interface PublicExcerptItem {
   id: number;
   title: string;
@@ -53,123 +79,350 @@ export interface PublicExcerptItem {
   reads_count: number;
   authors_summary: string;
   is_saved: boolean;
-  messages: Array<{
-    id: number;
-    text: string;
-    sender_display: string;
-    sender_handle: string | null;
-    sender_avatar: string | null;
-    is_anonymous: boolean;
-    reactions: {
-      heart: number;
-      cap: number;
-      skull: number;
-      fire: number;
-      user_reacted: string | null;
-      dominant: string;
-    };
-  }>;
+  messages: ExcerptMessage[];
+  created_at: string;
+}
+
+export interface TopicItem {
+  id: number;
+  tag: string;
+  name: string;
+  chats_count: number;
+}
+
+export interface SavedExcerptItem {
+  id: number;
+  excerpt: PublicExcerptItem;
+  collection_name: string;
+  created_at: string;
+}
+
+export interface AfterHoursDetail {
+  brand_name: string;
+  headline: string;
+  tagline: string;
+  image_url: string;
+  menu_items: Array<{ name: string; description: string }>;
+  tracks: Array<{ title: string; description: string }>;
+}
+
+// Token helper methods
+const TOKEN_KEY = 'cchat_auth_token';
+
+export const authStorage = {
+  getToken(): string | null {
+    try {
+      return localStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  },
+  setToken(token: string | null) {
+    try {
+      if (token) {
+        localStorage.setItem(TOKEN_KEY, token);
+      } else {
+        localStorage.removeItem(TOKEN_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  },
+};
+
+async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const token = authStorage.getToken();
+  const headers = new Headers(options.headers || {});
+
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Token ${token}`);
+  }
+
+  const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  return fetch(url, { ...options, headers });
 }
 
 export const cchatApi = {
+  // Authentication
+  async demoLogin(identifier: string = 'maya'): Promise<{ token: string; user: UserProfile }> {
+    const res = await apiFetch('/auth/demo-login/', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    });
+    if (!res.ok) throw new Error('Demo login failed');
+    const data = await res.json();
+    authStorage.setToken(data.token);
+    return data;
+  },
+
+  async login(username: string, password: string): Promise<{ token: string; user: UserProfile }> {
+    const res = await apiFetch('/auth/login/', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Login failed' }));
+      throw new Error(err.detail || 'Login failed');
+    }
+    const data = await res.json();
+    authStorage.setToken(data.token);
+    return data;
+  },
+
+  async register(data: {
+    username: string;
+    password: string;
+    handle: string;
+    display_name: string;
+    email?: string;
+  }): Promise<{ token: string; user: UserProfile }> {
+    const res = await apiFetch('/auth/register/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Registration failed' }));
+      throw new Error(err.detail || JSON.stringify(err));
+    }
+    const resData = await res.json();
+    authStorage.setToken(resData.token);
+    return resData;
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await apiFetch('/auth/logout/', { method: 'POST' });
+    } finally {
+      authStorage.setToken(null);
+    }
+  },
+
   async getMe(): Promise<UserProfile> {
-    const res = await fetch(`${API_BASE}/auth/me/`);
+    let res = await apiFetch('/auth/me/');
+    if (res.status === 401 || res.status === 403) {
+      // Automatically obtain a demo session for the initial load if no token exists
+      const demo = await this.demoLogin('maya');
+      return demo.user;
+    }
     if (!res.ok) throw new Error('Failed to load user profile');
     return res.json();
   },
 
+  async getUsers(): Promise<UserProfile[]> {
+    const res = await apiFetch('/users/');
+    if (!res.ok) throw new Error('Failed to load users');
+    const data = await res.json();
+    return data.results || data;
+  },
+
+  // Conversations
   async getChats(): Promise<ChatSummary[]> {
-    const res = await fetch(`${API_BASE}/chats/`);
+    let res = await apiFetch('/chats/');
+    if (res.status === 401 || res.status === 403) {
+      await this.demoLogin('maya');
+      res = await apiFetch('/chats/');
+    }
     if (!res.ok) throw new Error('Failed to load chats');
     const data = await res.json();
     return data.results || data;
   },
 
   async getChatDetail(id: number | string): Promise<ChatDetail> {
-    const res = await fetch(`${API_BASE}/chats/${id}/`);
+    let res = await apiFetch(`/chats/${id}/`);
+    if (res.status === 401 || res.status === 403) {
+      await this.demoLogin('maya');
+      res = await apiFetch(`/chats/${id}/`);
+    }
     if (!res.ok) throw new Error(`Failed to load chat ${id}`);
     return res.json();
   },
 
-  async sendMessage(chatId: number | string, text: string): Promise<ChatMessage> {
-    const res = await fetch(`${API_BASE}/chats/${chatId}/send_message/`, {
+  async createChat(recipientIdOrHandle: number | string, text?: string, title?: string): Promise<ChatDetail> {
+    const body: Record<string, any> = {};
+    if (typeof recipientIdOrHandle === 'number') {
+      body.recipient_id = recipientIdOrHandle;
+    } else {
+      body.recipient_handle = recipientIdOrHandle;
+    }
+    if (text) body.text = text;
+    if (title) body.title = title;
+
+    let res = await apiFetch('/chats/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401 || res.status === 403) {
+      await this.demoLogin('maya');
+      res = await apiFetch('/chats/', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    }
+    if (!res.ok) throw new Error('Failed to start chat');
+    return res.json();
+  },
+
+  async sendMessage(chatId: number | string, text: string): Promise<ChatMessage> {
+    const res = await apiFetch(`/chats/${chatId}/send_message/`, {
+      method: 'POST',
       body: JSON.stringify({ text }),
     });
-    if (!res.ok) throw new Error('Failed to send message');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to send message' }));
+      throw new Error(err.detail || 'Failed to send message');
+    }
     return res.json();
   },
 
   async publishExcerpt(chatId: number | string, title: string, topic: string) {
-    const res = await fetch(`${API_BASE}/chats/${chatId}/publish/`, {
+    const res = await apiFetch(`/chats/${chatId}/publish/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, topic }),
     });
-    if (!res.ok) throw new Error('Failed to publish');
+    if (!res.ok) throw new Error('Failed to publish excerpt');
     return res.json();
   },
 
   async removePublication(chatId: number | string) {
-    const res = await fetch(`${API_BASE}/chats/${chatId}/remove_publication/`, {
+    const res = await apiFetch(`/chats/${chatId}/remove_publication/`, {
       method: 'POST',
     });
     if (!res.ok) throw new Error('Failed to remove publication');
     return res.json();
   },
 
+  // Excerpts & Feed
   async getExcerpts(params?: { tab?: string; topic?: string }): Promise<PublicExcerptItem[]> {
     const query = new URLSearchParams();
-    if (params?.tab) query.set('tab', params.tab);
+    if (params?.tab) query.set('tab', params.tab.toLowerCase());
     if (params?.topic) query.set('topic', params.topic);
 
-    const res = await fetch(`${API_BASE}/excerpts/?${query.toString()}`);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const res = await apiFetch(`/excerpts/${queryString}`);
     if (!res.ok) throw new Error('Failed to load excerpts');
     const data = await res.json();
     return data.results || data;
   },
 
   async reactMessage(msgId: number, type: 'heart' | 'cap' | 'skull' | 'fire') {
-    const res = await fetch(`${API_BASE}/excerpts/messages/${msgId}/react/`, {
+    let res = await apiFetch(`/excerpts/messages/${msgId}/react/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type }),
     });
-    if (!res.ok) throw new Error('Failed to react');
+    if (res.status === 401 || res.status === 403) {
+      const err = await res.clone().json().catch(() => ({}));
+      if (err.detail && err.detail.includes('private')) {
+        throw new Error(err.detail);
+      }
+      await this.demoLogin('maya');
+      res = await apiFetch(`/excerpts/messages/${msgId}/react/`, {
+        method: 'POST',
+        body: JSON.stringify({ type }),
+      });
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to react' }));
+      throw new Error(err.detail || 'Failed to react');
+    }
     return res.json();
   },
 
-  async toggleSaveExcerpt(excerptId: number) {
-    const res = await fetch(`${API_BASE}/excerpts/${excerptId}/toggle_save/`, {
+  async toggleSaveExcerpt(excerptId: number): Promise<{ saved: boolean; detail: string }> {
+    let res = await apiFetch(`/excerpts/${excerptId}/toggle_save/`, {
       method: 'POST',
     });
+    if (res.status === 401 || res.status === 403) {
+      await this.demoLogin('maya');
+      res = await apiFetch(`/excerpts/${excerptId}/toggle_save/`, {
+        method: 'POST',
+      });
+    }
     if (!res.ok) throw new Error('Failed to toggle save');
     return res.json();
   },
 
-  async submitReport(reason: string, context: string) {
-    const res = await fetch(`${API_BASE}/moderation/report/`, {
+  async recordRead(excerptId: number): Promise<{ reads_count: number }> {
+    const res = await apiFetch(`/excerpts/${excerptId}/record_read/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error('Failed to record read');
+    return res.json();
+  },
+
+  async getSavedExcerpts(): Promise<SavedExcerptItem[]> {
+    let res = await apiFetch('/saved/');
+    if (res.status === 401 || res.status === 403) {
+      await this.demoLogin('maya');
+      res = await apiFetch('/saved/');
+    }
+    if (!res.ok) throw new Error('Failed to load saved excerpts');
+    const data = await res.json();
+    return data.results || data;
+  },
+
+  async getTopics(): Promise<TopicItem[]> {
+    const res = await apiFetch('/topics/');
+    if (!res.ok) throw new Error('Failed to load topics');
+    const data = await res.json();
+    return data.results || data;
+  },
+
+  // Moderation & Privacy
+  async submitReport(reason: string, context: string) {
+    const res = await apiFetch('/moderation/report/', {
+      method: 'POST',
       body: JSON.stringify({ reason, context }),
     });
-    if (!res.ok) throw new Error('Failed to submit report');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to submit report' }));
+      throw new Error(err.detail || 'Failed to submit report');
+    }
     return res.json();
   },
 
-  async submitInquiry(data: { name: string; brand: string; email: string; placement_interest: string; idea: string; agreed_terms: boolean }) {
-    const res = await fetch(`${API_BASE}/sponsorship/inquiry/`, {
+  async submitPrivacyRequest(data: {
+    name?: string;
+    email: string;
+    request_type: string;
+    details: string;
+  }) {
+    const res = await apiFetch('/privacy/request/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to submit inquiry');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to submit privacy request' }));
+      throw new Error(err.detail || 'Failed to submit privacy request');
+    }
     return res.json();
   },
 
-  async getAfterHoursDetail() {
-    const res = await fetch(`${API_BASE}/sponsorship/after-hours/`);
+  // Sponsorship
+  async submitInquiry(data: {
+    name: string;
+    brand: string;
+    email: string;
+    placement_interest: string;
+    idea: string;
+    agreed_terms: boolean;
+  }) {
+    const res = await apiFetch('/sponsorship/inquiry/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to submit inquiry' }));
+      throw new Error(err.detail || 'Failed to submit inquiry');
+    }
+    return res.json();
+  },
+
+  async getAfterHoursDetail(): Promise<AfterHoursDetail> {
+    const res = await apiFetch('/sponsorship/after-hours/');
     if (!res.ok) throw new Error('Failed to load After Hours detail');
     return res.json();
   },

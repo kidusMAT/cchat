@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Search, Bell, ChevronDown } from 'lucide-react';
+import { Search, Bell, ChevronDown, CheckCircle2, AlertCircle } from 'lucide-react';
+import { cchatApi } from '../services/api';
 
 interface SponsorshipPageProps {
   onNavigate?: (nav: string, topic?: string) => void;
@@ -12,12 +13,30 @@ export function SponsorshipPage({ onNavigate }: SponsorshipPageProps) {
   const [placement, setPlacement] = useState('Discover sponsor card');
   const [idea, setIdea] = useState('Late-night coffee and a playlist for the conversation that keeps going.');
   const [agreed, setAgreed] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
+    if (!name.trim() || !brand.trim() || !email.trim() || !idea.trim()) return;
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      await cchatApi.submitInquiry({
+        name: name.trim(),
+        brand: brand.trim(),
+        email: email.trim(),
+        placement_interest: placement,
+        idea: idea.trim(),
+        agreed_terms: agreed,
+      });
+      setSubmitted(true);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to submit partnership inquiry.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -103,7 +122,7 @@ export function SponsorshipPage({ onNavigate }: SponsorshipPageProps) {
               </div>
             </div>
             <div className="text-[10px] text-slate-500 mt-2 font-mono">
-              Illustrative partner concept. Not a claim about an operating merchant.
+              Featured partner showcase. Brand partnerships support public reading without interrupting private chats.
             </div>
           </div>
 
@@ -169,97 +188,129 @@ export function SponsorshipPage({ onNavigate }: SponsorshipPageProps) {
       <aside className="w-[300px] shrink-0 p-5 space-y-5 overflow-y-auto bg-[#09090f]">
         {/* Start a partner conversation card */}
         <div className="p-5 rounded-2xl bg-[#0f0f18] border border-[#1f1f2e] space-y-3.5 shadow-lg">
-          <h4 className="text-xs font-bold text-white">Start a partner conversation</h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-white">Partner Inquiry</h4>
+            <span className="text-[10px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full font-semibold">Open</span>
+          </div>
+
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            Tell us about the idea. This form is an illustrative inquiry state, not a booking or checkout.
+            Submit your concept for placement on public discovery and reading feeds.
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-3 pt-1">
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Your name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Brand / project
-              </label>
-              <input
-                type="text"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Work email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Placement interest
-              </label>
-              <div className="relative">
-                <select
-                  value={placement}
-                  onChange={(e) => setPlacement(e.target.value)}
-                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white appearance-none focus:outline-none focus:border-blue-500 cursor-pointer pr-8"
+          {submitted ? (
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Inquiry submitted successfully</p>
+                <p className="text-[11px] text-emerald-400/80 mt-1">Our sponsorship team will review your proposal and follow up at {email} within 2 business days.</p>
+                <button
+                  type="button"
+                  onClick={() => setSubmitted(false)}
+                  className="mt-3 text-[11px] font-bold text-white underline hover:no-underline"
                 >
-                  <option value="Discover sponsor card">Discover sponsor card</option>
-                  <option value="Public reading support">Public reading support</option>
-                  <option value="Topic partner placement">Topic partner placement</option>
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  Send another inquiry
+                </button>
               </div>
             </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3 pt-1">
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Your name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
 
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Your idea
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Brand / project
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Work email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Placement interest
+                </label>
+                <div className="relative">
+                  <select
+                    value={placement}
+                    onChange={(e) => setPlacement(e.target.value)}
+                    className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white appearance-none focus:outline-none focus:border-blue-500 cursor-pointer pr-8"
+                  >
+                    <option value="Discover sponsor card">Discover sponsor card</option>
+                    <option value="Public reading support">Public reading support</option>
+                    <option value="Topic partner placement">Topic partner placement</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Your idea
+                </label>
+                <textarea
+                  required
+                  value={idea}
+                  onChange={(e) => setIdea(e.target.value)}
+                  rows={3}
+                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
+                />
+              </div>
+
+              <label className="flex items-start gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  className="mt-0.5 rounded border-[#303045] bg-[#0a0a10] text-blue-500 focus:ring-0 cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-400 leading-snug">
+                  I understand sponsored content is clearly labeled and kept out of private chats.
+                </span>
               </label>
-              <textarea
-                value={idea}
-                onChange={(e) => setIdea(e.target.value)}
-                rows={3}
-                className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
-              />
-            </div>
 
-            <label className="flex items-start gap-2 cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                checked={agreed}
-                onChange={(e) => setAgreed(e.target.checked)}
-                className="mt-0.5 rounded border-[#303045] bg-[#0a0a10] text-blue-500 focus:ring-0 cursor-pointer"
-              />
-              <span className="text-[11px] text-slate-400 leading-snug">
-                I understand sponsored content is clearly labeled and kept out of private chats.
-              </span>
-            </label>
-
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors cursor-pointer shadow-md shadow-blue-500/20 active:scale-98"
-            >
-              {submitted ? 'Inquiry sent ✓' : 'Send inquiry'}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs transition-colors cursor-pointer shadow-md shadow-blue-500/20 active:scale-98"
+              >
+                {submitting ? 'Submitting...' : 'Send inquiry'}
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Footer */}

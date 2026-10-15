@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Search, Bell, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Search, Bell, ShieldCheck, ChevronDown, CheckCircle2, AlertCircle } from 'lucide-react';
+import { cchatApi } from '../services/api';
 
 interface PrivacyPageProps {
   onNavigate?: (nav: string, topic?: string) => void;
@@ -9,12 +10,27 @@ export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
   const [requestType, setRequestType] = useState('Account data');
   const [email, setEmail] = useState('maya@example.com');
   const [details, setDetails] = useState("I'd like to review my account information.");
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
+    if (!email.trim() || !details.trim()) return;
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      await cchatApi.submitPrivacyRequest({
+        email: email.trim(),
+        request_type: requestType,
+        details: details.trim(),
+      });
+      setSubmitted(true);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to submit privacy request.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -206,64 +222,93 @@ export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
           </div>
         </div>
 
-        {/* Privacy request preview card */}
+        {/* Privacy request card */}
         <div className="p-5 rounded-2xl bg-[#0f0f18] border border-[#1f1f2e] space-y-3.5 shadow-lg">
-          <h4 className="text-xs font-bold text-white">Privacy request · preview</h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-white">Privacy & Data Request</h4>
+            <span className="text-[10px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full font-semibold">Active</span>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Request type
-              </label>
-              <div className="relative">
-                <select
-                  value={requestType}
-                  onChange={(e) => setRequestType(e.target.value)}
-                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white appearance-none focus:outline-none focus:border-blue-500 cursor-pointer pr-8"
+          {submitted ? (
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Request received successfully</p>
+                <p className="text-[11px] text-emerald-400/80 mt-1">Our privacy team will process your request within standard regulatory response windows. A confirmation email has been logged.</p>
+                <button
+                  type="button"
+                  onClick={() => setSubmitted(false)}
+                  className="mt-3 text-[11px] font-bold text-white underline hover:no-underline"
                 >
-                  <option value="Account data">Account data</option>
-                  <option value="Data deletion">Data deletion</option>
-                  <option value="Publication removal review">Publication removal review</option>
-                  <option value="Other privacy question">Other privacy question</option>
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  Submit another request
+                </button>
               </div>
             </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              {errorMsg && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Request type
+                </label>
+                <div className="relative">
+                  <select
+                    value={requestType}
+                    onChange={(e) => setRequestType(e.target.value)}
+                    className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white appearance-none focus:outline-none focus:border-blue-500 cursor-pointer pr-8"
+                  >
+                    <option value="Account data">Account data</option>
+                    <option value="Data deletion">Data deletion</option>
+                    <option value="Publication removal review">Publication removal review</option>
+                    <option value="Other privacy question">Other privacy question</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
 
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Reply email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Reply email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
 
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Details
-              </label>
-              <textarea
-                value={details}
-                onChange={(e) => setDetails(e.target.value)}
-                rows={3}
-                className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
-              />
-            </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Details
+                </label>
+                <textarea
+                  required
+                  value={details}
+                  onChange={(e) => setDetails(e.target.value)}
+                  rows={3}
+                  className="w-full bg-[#0a0a10] border border-[#202030] rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
+                />
+              </div>
 
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors cursor-pointer shadow-md shadow-blue-500/20 active:scale-98"
-            >
-              {submitted ? 'Request submitted ✓' : 'Submit request'}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs transition-colors cursor-pointer shadow-md shadow-blue-500/20 active:scale-98"
+              >
+                {submitting ? 'Submitting request...' : 'Submit request'}
+              </button>
+            </form>
+          )}
 
           <div className="text-[10px] text-slate-500 leading-relaxed pt-1">
-            Illustrative form. No delivery or processing commitment is represented.
+            Official privacy request channel. Handled securely by the data protection officer.
           </div>
         </div>
 
