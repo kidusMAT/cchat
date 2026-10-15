@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from apps.accounts.views import MeView, UserProfileViewSet
+from apps.accounts.views import MeView, UserProfileViewSet, LoginView, SignupView
 from apps.conversations.views import ConversationViewSet
 from apps.publications.views import (
     PublicExcerptViewSet,
@@ -23,6 +23,8 @@ router.register(r'saved', SavedExcerptViewSet, basename='saved')
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/me/', MeView.as_view(), name='auth-me'),
+    path('api/auth/login/', LoginView.as_view(), name='auth-login'),
+    path('api/auth/signup/', SignupView.as_view(), name='auth-signup'),
     path('api/excerpts/messages/<int:msg_id>/react/', react_message, name='message-react'),
     path('api/moderation/report/', SubmitReportView.as_view(), name='submit-report'),
     path('api/sponsorship/inquiry/', SubmitInquiryView.as_view(), name='submit-inquiry'),

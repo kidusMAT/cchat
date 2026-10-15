@@ -24,7 +24,11 @@ import {
   Globe,
   Eye,
   ChevronDown,
-  Sparkles
+  Sparkles,
+  LogOut,
+  User,
+  Smartphone,
+  Monitor
 } from 'lucide-react';
 import { AboutPage } from './pages/AboutPage';
 import { CommunityRulesPage } from './pages/CommunityRulesPage';
@@ -32,6 +36,7 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import { SponsorshipPage } from './pages/SponsorshipPage';
 import { AfterHoursPage } from './pages/AfterHoursPage';
 import { MyChatsPage } from './pages/MyChatsPage';
+import { LoginPage } from './pages/LoginPage';
 
 // Shared double chat-bubble logo icon
 const CchatLogoIcon = () => (
@@ -44,21 +49,98 @@ const CchatLogoIcon = () => (
   </svg>
 );
 
+// Mobile iOS-style status bar with 9:41, cellular signal, wifi, and battery
+const MobileStatusBar = () => (
+  <div className="pt-2.5 pb-1 px-7 flex items-center justify-between text-xs text-white shrink-0 select-none bg-[#0d0c12]">
+    <span className="font-semibold text-[13px] tracking-tight">9:41</span>
+    <div className="flex items-center gap-1.5 text-white">
+      {/* Cellular signal bars */}
+      <div className="flex items-end gap-[2px] h-3">
+        <span className="w-[3px] h-1 bg-white rounded-[0.5px]"></span>
+        <span className="w-[3px] h-1.5 bg-white rounded-[0.5px]"></span>
+        <span className="w-[3px] h-2 bg-white rounded-[0.5px]"></span>
+        <span className="w-[3px] h-3 bg-white rounded-[0.5px]"></span>
+      </div>
+      {/* WiFi */}
+      <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+        <path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98C20.93 5.9 16.69 4 12 4zm0 3.5c3.78 0 7.22 1.48 9.77 3.91L12 19.34 2.23 11.41C4.78 8.98 8.22 7.5 12 7.5z"/>
+      </svg>
+      {/* Battery */}
+      <div className="flex items-center">
+        <div className="w-5 h-2.5 rounded-[3px] border border-white p-[1px] flex items-center">
+          <div className="w-3.5 h-full bg-white rounded-[1px]"></div>
+        </div>
+        <div className="w-[1.5px] h-1 bg-white rounded-r-[1px] ml-[0.5px]"></div>
+      </div>
+    </div>
+  </div>
+);
+
+// Mobile bottom navigation bar matching Figma dock
+export function MobileBottomNav({
+  activeNav,
+  onNav,
+}: {
+  activeNav: string;
+  onNav: (nav: string) => void;
+}) {
+  const items = [
+    { id: 'Discover', label: 'Discover', icon: Compass },
+    { id: 'Following', label: 'Following', icon: Users },
+    { id: 'My chats', label: 'My chats', icon: MessageSquare },
+    { id: 'Profile', label: 'You', icon: User },
+  ];
+
+  return (
+    <nav className="shrink-0 bg-[#09090f]/95 backdrop-blur-md border-t border-[#171722] pt-2 pb-1 px-4 z-30 select-none">
+      <div className="flex items-center justify-around">
+        {items.map(({ id, label, icon: Icon }) => {
+          const isActive =
+            activeNav === id ||
+            (id === 'Discover' && (activeNav === "Tonight's picks" || activeNav === 'Fresh'));
+          return (
+            <button
+              key={id}
+              onClick={() => onNav(id)}
+              className={`flex flex-col items-center gap-1 py-1 px-3 cursor-pointer transition-colors ${
+                isActive ? 'text-blue-400' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Icon className="w-5 h-5 stroke-[2.2]" />
+              <span className={`text-[10px] ${isActive ? 'font-bold text-blue-400' : 'font-medium'}`}>
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {/* Home Indicator */}
+      <div className="w-32 h-1 bg-white/70 rounded-full mx-auto mt-2 mb-1"></div>
+    </nav>
+  );
+}
+
+
 // ─────────────────────────────────────────────────────────────
 // LEFT SIDEBAR (shared across all views)
 // ─────────────────────────────────────────────────────────────
 interface SidebarProps {
   activeNav: string;
   onNav: (nav: string) => void;
+  currentUser?: string | null;
+  onLogout?: () => void;
 }
 
-function Sidebar({ activeNav, onNav }: SidebarProps) {
+function Sidebar({ activeNav, onNav, currentUser, onLogout }: SidebarProps) {
   const navItems = [
     { id: 'Discover', icon: Compass, label: 'Discover' },
     { id: 'Following', icon: Users, label: 'Following' },
     { id: 'My chats', icon: MessageSquare, label: 'My chats', badge: '3' },
     { id: 'Saved', icon: Bookmark, label: 'Saved' },
   ];
+
+  const handleDisplay = currentUser ? (currentUser.startsWith('@') ? currentUser : `@${currentUser}`) : '@mayamaybe';
+  const nameDisplay = currentUser && currentUser !== '@mayamaybe' ? currentUser.replace('@', '') : 'Maya Chen';
 
   return (
     <aside className="w-[240px] shrink-0 border-r border-[#171722] flex flex-col justify-between p-4 bg-[#09090f] h-full">
@@ -119,21 +201,30 @@ function Sidebar({ activeNav, onNav }: SidebarProps) {
           >
             <img
               src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
-              alt="Maya Chen"
+              alt={nameDisplay}
               className="w-9 h-9 rounded-full object-cover border border-[#2b2b3d]"
             />
             <div className="min-w-0">
-              <div className="text-xs font-bold text-white truncate">Maya Chen</div>
-              <div className="text-[11px] text-slate-500 truncate">@mayamaybe</div>
+              <div className="text-xs font-bold text-white truncate">{nameDisplay}</div>
+              <div className="text-[11px] text-slate-500 truncate">{handleDisplay}</div>
             </div>
           </div>
-          <button
-            onClick={() => onNav('Account and settings')}
-            className="p-1.5 text-slate-500 hover:text-white rounded-lg hover:bg-[#151522] transition-colors cursor-pointer"
-            title="Account and settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onNav('Account and settings')}
+              className="p-1.5 text-slate-500 hover:text-white rounded-lg hover:bg-[#151522] transition-colors cursor-pointer"
+              title="Account and settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onLogout}
+              className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-[#151522] transition-colors cursor-pointer"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </aside>
@@ -149,14 +240,16 @@ const SkullIcon = () => <span className="text-[13px]">💀</span>;
 function DiscoverPage({
   onNavigateTab,
   onNavigate,
+  isMobile = false,
 }: {
   onNavigateTab?: (tab: string) => void;
   onNavigate?: (nav: string, topic?: string) => void;
+  isMobile?: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<'For you' | 'Following' | 'Fresh'>('For you');
   const [saved, setSaved] = useState(false);
   const [reactions, setReactions] = useState({
-    m1: { heart: 124, cap: 1200, skull: 486, fire: 82, userReacted: null as string | null },
+    m1: { heart: 124, cap: 1200, skull: 486, fire: 82, userReacted: 'cap' as string | null },
     m2: { heart: 842, cap: 32, skull: 211, fire: 64, userReacted: 'heart' as string | null },
     m3: { heart: 98, cap: 1800, skull: 920, fire: 143, userReacted: 'cap' as string | null },
     m4: { heart: 215, cap: 48, skull: 2400, fire: 306, userReacted: 'skull' as string | null },
@@ -185,17 +278,17 @@ function DiscoverPage({
   const ReactionBar = ({ msgKey, className = '' }: { msgKey: keyof typeof reactions; className?: string }) => {
     const r = reactions[msgKey];
     const types = [
-      { type: 'heart' as const, icon: <Heart className="w-3 h-3 fill-current text-rose-400" />, active: 'bg-rose-500/20 border-rose-500/40 text-rose-300' },
-      { type: 'cap' as const, icon: <CapIcon />, active: 'bg-blue-500/20 border-blue-500/40 text-blue-300' },
-      { type: 'skull' as const, icon: <SkullIcon />, active: 'bg-purple-500/20 border-purple-500/40 text-purple-300' },
-      { type: 'fire' as const, icon: <Flame className="w-3 h-3 text-amber-400 fill-current" />, active: 'bg-amber-500/20 border-amber-500/40 text-amber-300' },
+      { type: 'heart' as const, icon: <Heart className="w-3 h-3 fill-current text-rose-400" />, active: 'bg-[#3f192b] border-[#7d2952] text-rose-300' },
+      { type: 'cap' as const, icon: <CapIcon />, active: 'bg-[#182a45] border-[#254d87] text-blue-300' },
+      { type: 'skull' as const, icon: <SkullIcon />, active: 'bg-[#2a1738] border-[#6b2c8f] text-purple-300' },
+      { type: 'fire' as const, icon: <Flame className="w-3 h-3 text-amber-400 fill-current" />, active: 'bg-[#3a2211] border-[#7c461e] text-amber-300' },
     ];
     return (
       <div className={`flex items-center gap-1.5 mt-2 ${className}`}>
         {types.map(({ type, icon, active }) => (
           <button key={type} onClick={() => toggle(msgKey, type)}
-            className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-colors cursor-pointer ${
-              r.userReacted === type ? active : 'bg-[#151522] border-[#232334] text-slate-400 hover:text-white'
+            className={`flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full border transition-colors cursor-pointer select-none ${
+              r.userReacted === type ? `${active} font-semibold shadow-xs` : 'bg-[#141420] border-[#232336] text-slate-400 hover:text-white'
             }`}
           >
             {icon}
@@ -205,6 +298,246 @@ function DiscoverPage({
       </div>
     );
   };
+
+  // ── Mobile Responsive View matching user screenshots ─────────────
+  if (isMobile) {
+    return (
+      <div className="flex-1 flex flex-col min-h-0 bg-[#0d0c12] text-slate-100">
+        {/* Top Mobile Header */}
+        <header className="px-5 py-3 flex items-center justify-between shrink-0 bg-[#0d0c12]">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate && onNavigate('Discover')}>
+            <CchatLogoIcon />
+            <span className="text-xl font-black tracking-tight text-white">CCHAT</span>
+          </div>
+          <div className="flex items-center gap-4 text-white">
+            <button
+              onClick={() => onNavigate && onNavigate('Search')}
+              className="p-1 text-slate-300 hover:text-white transition-colors cursor-pointer"
+              title="Search"
+            >
+              <Search className="w-5 h-5 stroke-[2.2]" />
+            </button>
+            <button
+              onClick={() => onNavigate && onNavigate('Notifications')}
+              className="p-1 text-slate-300 hover:text-white transition-colors cursor-pointer relative"
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5 stroke-[2.2]" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+            </button>
+          </div>
+        </header>
+
+        {/* Centered Mobile Tabs */}
+        <div className="pt-1 pb-3 flex items-center justify-center gap-8 shrink-0 bg-[#0d0c12] select-none">
+          {(['Following', 'For you', 'Fresh'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => handleTabClick(tab)}
+              className={`text-sm transition-colors cursor-pointer pb-1 relative ${
+                activeTab === tab ? 'text-white font-bold' : 'text-slate-400 font-medium hover:text-slate-200'
+              }`}
+            >
+              {tab}
+              {activeTab === tab && (
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-7 h-[2.5px] bg-blue-500 rounded-full"></span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Scrollable Feed */}
+        <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-4">
+          {/* Post Header */}
+          <div className="pt-2 pb-1">
+            <h2 className="text-[22px] sm:text-2xl font-black text-white tracking-tight leading-[1.25]">
+              he brought a résumé<br />to a first date.
+            </h2>
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center gap-2.5">
+                <img
+                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
+                  alt="Maya"
+                  className="w-6 h-6 rounded-full object-cover border border-[#2b2b3d]"
+                />
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className="font-semibold text-slate-300">@mayamaybe</span>
+                  <span>×</span>
+                  <span>Anonymous</span>
+                  <span>•</span>
+                  <span className="text-slate-300 font-medium">#dating</span>
+                </div>
+              </div>
+              <button className="text-slate-400 hover:text-white p-1 cursor-pointer">
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Reading Indicator */}
+          <div className="py-1 flex items-center justify-center gap-2 text-[11px] text-slate-400 font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>386 reading · tap a reaction</span>
+          </div>
+
+          {/* Messages */}
+          <div className="space-y-4 pt-1">
+            {/* 1. Anonymous */}
+            <div className="space-y-1">
+              <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5">
+                <span>Anonymous</span><ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="max-w-[80%]">
+                  <div className="rounded-2xl rounded-tl-xs px-4 py-3 bg-[#182e4e] border border-[#234270] text-slate-100 text-[13px] font-medium leading-relaxed">
+                    i brought a résumé to the date.
+                  </div>
+                </div>
+                <span className="text-xl -rotate-12 select-none shrink-0 drop-shadow">🧢</span>
+              </div>
+              <ReactionBar msgKey="m1" />
+            </div>
+
+            {/* 2. Maya */}
+            <div className="space-y-1 flex flex-col items-end">
+              <div className="text-[11px] text-slate-400 font-semibold pr-1">Maya</div>
+              <div className="max-w-[80%]">
+                <div className="rounded-2xl rounded-tr-xs px-4 py-3 bg-[#3f1c32] border border-[#592647] text-rose-50 text-[13px] font-medium leading-relaxed">
+                  please tell me this is a metaphor
+                </div>
+              </div>
+              <ReactionBar msgKey="m2" className="justify-end" />
+            </div>
+
+            {/* 3. Anonymous */}
+            <div className="space-y-1">
+              <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5">
+                <span>Anonymous</span><ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              </div>
+              <div className="max-w-[80%]">
+                <div className="rounded-2xl rounded-tl-xs px-4 py-3 bg-[#182e4e] border border-[#234270] text-slate-100 text-[13px] font-medium leading-relaxed">
+                  two pages. references available on request.
+                </div>
+              </div>
+              <ReactionBar msgKey="m3" />
+            </div>
+
+            {/* 4. Maya */}
+            <div className="space-y-1 flex flex-col items-end">
+              <div className="text-[11px] text-slate-400 font-semibold pr-1">Maya</div>
+              <div className="max-w-[80%]">
+                <div className="rounded-2xl rounded-tr-xs px-4 py-3 bg-[#1c2230] border border-[#283247] text-slate-100 text-[13px] font-medium leading-relaxed">
+                  did you at least get the position?
+                </div>
+              </div>
+              <ReactionBar msgKey="m4" className="justify-end" />
+            </div>
+
+            {/* 5. Anonymous */}
+            <div className="space-y-1">
+              <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5">
+                <span>Anonymous</span><ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="max-w-[80%]">
+                  <div className="rounded-2xl rounded-tl-xs px-4 py-3 bg-[#3b2716] border border-[#543820] text-amber-100 text-[13px] font-medium leading-relaxed">
+                    second interview on friday. benefits include pasta.
+                  </div>
+                </div>
+                <span className="text-2xl select-none shrink-0 drop-shadow animate-pulse">🔥</span>
+              </div>
+              <ReactionBar msgKey="m5" />
+            </div>
+
+            {/* 6. Maya */}
+            <div className="space-y-1 flex flex-col items-end">
+              <div className="text-[11px] text-slate-400 font-semibold pr-1">Maya</div>
+              <div className="flex items-center gap-3 max-w-[85%]">
+                <span className="text-2xl select-none shrink-0 drop-shadow animate-bounce">💖</span>
+                <div className="flex-1">
+                  <div className="rounded-2xl rounded-tr-xs px-4 py-3 bg-[#3f1c32] border border-[#592647] text-rose-50 text-[13px] font-medium leading-relaxed">
+                    honestly? hired.
+                  </div>
+                </div>
+              </div>
+              <ReactionBar msgKey="m6" className="justify-end" />
+            </div>
+          </div>
+
+          {/* Card Footer */}
+          <div className="pt-4 border-t border-[#181826] flex items-center justify-between text-xs text-slate-400 px-1">
+            <div className="flex items-center gap-4">
+              <span>18.4k reads</span>
+              <span className="flex items-center gap-1 text-slate-300 font-semibold">
+                <SkullIcon /> You reacted
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSaved(!saved)}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  saved ? 'text-blue-400' : 'text-slate-400 hover:text-white'
+                }`}
+                title={saved ? 'Saved' : 'Save'}
+              >
+                <Bookmark className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
+              </button>
+              <button className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer" title="Share">
+                <Share2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Up Next Card */}
+          <div
+            onClick={() => onNavigate && onNavigate("Tonight's picks")}
+            className="p-4 rounded-2xl bg-[#11111c] border border-[#1e1e2d] flex items-center justify-between cursor-pointer hover:bg-[#151524] transition-colors"
+          >
+            <div className="flex items-start gap-3">
+              <ArrowDown className="w-4 h-4 text-blue-400 mt-0.5 shrink-0 stroke-[2.5]" />
+              <div>
+                <div className="text-[10px] font-black tracking-wider text-blue-400 uppercase">
+                  SWIPE UP FOR THE NEXT CHAT
+                </div>
+                <div className="text-xs font-bold text-white mt-0.5">
+                  the raccoon is not on the lease.
+                </div>
+              </div>
+            </div>
+            <span className="text-xs font-mono text-slate-500 font-semibold">02 / 12</span>
+          </div>
+
+          {/* Sponsorship Section */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between text-[11px] px-1">
+              <span className="font-extrabold tracking-wider text-blue-400 uppercase">SPONSORSHIP</span>
+              <span className="text-slate-500 font-medium">Partner content</span>
+            </div>
+            <div className="p-5 rounded-2xl bg-[#10101a] border border-[#1e1e2d] space-y-2.5">
+              <div className="text-[9px] font-bold text-slate-400 tracking-wider uppercase bg-[#181827] px-2 py-0.5 rounded w-fit border border-[#232338]">
+                SPONSORED
+              </div>
+              <h4 className="text-sm font-extrabold text-white">
+                After Hours. Fuel your next conversation.
+              </h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Late-night coffee, fresh playlists, better conversations.
+              </p>
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={() => onNavigate && onNavigate('After Hours sponsor detail')}
+                  className="px-4 py-2 rounded-full border border-slate-700 bg-[#161626] hover:bg-[#1d1d30] text-white text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  Learn more
+                </button>
+                <span className="text-[11px] text-slate-500">Sponsored • After Hours</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex h-full min-w-0">
@@ -2475,7 +2808,7 @@ function NotificationsPage({ onNavigate }: { onNavigate?: (nav: string) => void 
 // ─────────────────────────────────────────────────────────────
 // VIEW 8: PROFILE PAGE (MATCHING FIGMA SCREENSHOT)
 // ─────────────────────────────────────────────────────────────
-function ProfilePage({ onNavigate }: { onNavigate?: (nav: string) => void }) {
+function ProfilePage({ onNavigate, onLogout }: { onNavigate?: (nav: string) => void; onLogout?: () => void }) {
   const [activeTab, setActiveTab] = useState<'Published chats' | 'About Maya'>('Published chats');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [bio, setBio] = useState('A little less posting. A lot more plot.');
@@ -4907,8 +5240,23 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate }: TopicDetailPagePr
 // ROOT APP WITH NAVIGATION
 // ─────────────────────────────────────────────────────────────
 export function App() {
-  const [activeNav, setActiveNav] = useState<string>("Tonight's picks");
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('cchat_logged_in') !== 'false';
+  });
+  const [activeNav, setActiveNav] = useState<string>('Discover');
   const [selectedTopic, setSelectedTopic] = useState<string>('#dating');
+  const [isDesktopFrame, setIsDesktopFrame] = useState<boolean>(false);
+
+  const handleLogin = (_handle: string) => {
+    localStorage.setItem('cchat_logged_in', 'true');
+    setIsLoggedIn(true);
+    setActiveNav('Discover');
+  };
+
+  const handleLogout = () => {
+    localStorage.setItem('cchat_logged_in', 'false');
+    setIsLoggedIn(false);
+  };
 
   const handleNavigate = (nav: string, topic?: string) => {
     if (topic) setSelectedTopic(topic);
@@ -4925,32 +5273,133 @@ export function App() {
     }
   };
 
-  return (
-    <div className="h-screen w-screen overflow-hidden bg-[#09090f] text-slate-100 flex font-sans">
-      <Sidebar activeNav={activeNav} onNav={setActiveNav} />
+  // ── Not logged in → show login gate ─────────────────────────
+  if (!isLoggedIn) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
-      {activeNav === 'Discover' && <DiscoverPage onNavigateTab={handleNavigateTab} onNavigate={handleNavigate} />}
-      {activeNav === 'Following' && <FollowingPage onNavigateTab={handleNavigateTab} />}
-      {activeNav === 'Fresh' && <FreshPage onNavigateTab={handleNavigateTab} />}
-      {activeNav === 'My chats' && <MyChatsPage onNavigate={setActiveNav} />}
-      {activeNav === 'Saved' && <SavedPage />}
-      {activeNav === 'Start a chat' && <StartChatPage onNavigate={setActiveNav} />}
-      {activeNav === 'Search' && <SearchPage onNavigate={setActiveNav} />}
-      {activeNav === 'Notifications' && <NotificationsPage onNavigate={setActiveNav} />}
-      {activeNav === 'Profile' && <ProfilePage onNavigate={setActiveNav} />}
-      {activeNav === 'Account and settings' && <AccountSettingsPage onNavigate={setActiveNav} />}
-      {activeNav === 'Published chats' && <PublishedChatsPage onNavigate={setActiveNav} />}
-      {activeNav === 'Topics directory' && <TopicsDirectoryPage onNavigate={handleNavigate} />}
-      {activeNav === 'Topic detail' && <TopicDetailPage topicTag={selectedTopic} onNavigate={handleNavigate} />}
-      {activeNav === "Tonight's picks" && <TonightsPicksPage onNavigate={handleNavigate} />}
-      {(activeNav === 'About' || activeNav === 'About CCHAT') && <AboutPage onNavigate={handleNavigate} />}
-      {activeNav === 'Community rules' && <CommunityRulesPage onNavigate={handleNavigate} />}
-      {activeNav === 'Privacy' && <PrivacyPage onNavigate={handleNavigate} />}
-      {(activeNav === 'Sponsorship' || activeNav === 'Sponsorship / Learn more') && <SponsorshipPage onNavigate={handleNavigate} />}
-      {(activeNav === 'After Hours sponsor detail' || activeNav === 'After Hours') && <AfterHoursPage onNavigate={handleNavigate} />}
+  const renderContent = (isMobile: boolean) => {
+    if (activeNav === 'Discover') {
+      return <DiscoverPage isMobile={isMobile} onNavigateTab={handleNavigateTab} onNavigate={handleNavigate} />;
+    }
+    if (activeNav === 'Following') {
+      return <FollowingPage onNavigateTab={handleNavigateTab} />;
+    }
+    if (activeNav === 'Fresh') {
+      return <FreshPage onNavigateTab={handleNavigateTab} />;
+    }
+    if (activeNav === 'My chats') {
+      return <MyChatsPage onNavigate={setActiveNav} />;
+    }
+    if (activeNav === 'Saved') {
+      return <SavedPage />;
+    }
+    if (activeNav === 'Start a chat') {
+      return <StartChatPage onNavigate={setActiveNav} />;
+    }
+    if (activeNav === 'Search') {
+      return <SearchPage onNavigate={setActiveNav} />;
+    }
+    if (activeNav === 'Notifications') {
+      return <NotificationsPage onNavigate={setActiveNav} />;
+    }
+    if (activeNav === 'Profile') {
+      return <ProfilePage onNavigate={setActiveNav} onLogout={handleLogout} />;
+    }
+    if (activeNav === 'Account and settings') {
+      return <AccountSettingsPage onNavigate={setActiveNav} />;
+    }
+    if (activeNav === 'Published chats') {
+      return <PublishedChatsPage onNavigate={setActiveNav} />;
+    }
+    if (activeNav === 'Topics directory') {
+      return <TopicsDirectoryPage onNavigate={handleNavigate} />;
+    }
+    if (activeNav === 'Topic detail') {
+      return <TopicDetailPage topicTag={selectedTopic} onNavigate={handleNavigate} />;
+    }
+    if (activeNav === "Tonight's picks") {
+      return <TonightsPicksPage onNavigate={handleNavigate} />;
+    }
+    if (activeNav === 'About' || activeNav === 'About CCHAT') {
+      return <AboutPage onNavigate={handleNavigate} />;
+    }
+    if (activeNav === 'Community rules') {
+      return <CommunityRulesPage onNavigate={handleNavigate} />;
+    }
+    if (activeNav === 'Privacy') {
+      return <PrivacyPage onNavigate={handleNavigate} />;
+    }
+    if (activeNav === 'Sponsorship' || activeNav === 'Sponsorship / Learn more') {
+      return <SponsorshipPage onNavigate={handleNavigate} />;
+    }
+    if (activeNav === 'After Hours sponsor detail' || activeNav === 'After Hours') {
+      return <AfterHoursPage onNavigate={handleNavigate} />;
+    }
+    return <DiscoverPage isMobile={isMobile} onNavigateTab={handleNavigateTab} onNavigate={handleNavigate} />;
+  };
+
+  // ── Desktop Expanded 3-Column Layout ────────────────────────
+  if (isDesktopFrame) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-[#09090f] text-slate-100 flex font-sans relative">
+        {/* Floating View Switcher on Large Screens */}
+        <div className="hidden lg:flex items-center gap-1 fixed top-4 right-5 z-50 bg-[#12121d]/90 backdrop-blur-md border border-[#232338] rounded-full p-1 shadow-2xl">
+          <button
+            onClick={() => setIsDesktopFrame(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-400 hover:text-white transition-all cursor-pointer"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Mobile Frame</span>
+          </button>
+          <button
+            onClick={() => setIsDesktopFrame(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600 text-white shadow-md transition-all cursor-pointer"
+          >
+            <Monitor className="w-3.5 h-3.5" />
+            <span>Desktop Layout</span>
+          </button>
+        </div>
+
+        <Sidebar activeNav={activeNav} onNav={setActiveNav} onLogout={handleLogout} />
+        {renderContent(false)}
+      </div>
+    );
+  }
+
+  // ── Mobile Responsive Frame (Matches User Screenshot & Auto-adapts) ──
+  return (
+    <div className="min-h-screen w-screen bg-[#000000] text-slate-100 flex flex-col items-center justify-center p-0 lg:py-4 overflow-hidden select-text relative font-sans">
+      {/* Floating View Switcher on Large Screens */}
+      <div className="hidden lg:flex items-center gap-1 fixed top-4 right-5 z-50 bg-[#12121d]/90 backdrop-blur-md border border-[#232338] rounded-full p-1 shadow-2xl">
+        <button
+          onClick={() => setIsDesktopFrame(false)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600 text-white shadow-md transition-all cursor-pointer"
+        >
+          <Smartphone className="w-3.5 h-3.5" />
+          <span>Mobile Frame</span>
+        </button>
+        <button
+          onClick={() => setIsDesktopFrame(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-400 hover:text-white transition-all cursor-pointer"
+        >
+          <Monitor className="w-3.5 h-3.5" />
+          <span>Desktop Layout</span>
+        </button>
+      </div>
+
+      {/* Mobile Device Viewport */}
+      <div className="w-full h-screen lg:max-w-[430px] lg:h-[92vh] lg:max-h-[920px] lg:rounded-[44px] overflow-hidden border-0 lg:border border-[#222236] bg-[#0d0c12] flex flex-col shadow-[0_0_80px_rgba(0,0,0,0.95)] relative">
+        <MobileStatusBar />
+        <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+          {renderContent(true)}
+        </div>
+        <MobileBottomNav activeNav={activeNav} onNav={setActiveNav} />
+      </div>
     </div>
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // VIEW 14: TONIGHT'S PICKS / THE AFTER-HOURS EDIT
