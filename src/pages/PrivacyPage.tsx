@@ -1,15 +1,27 @@
-import React, { useState } from 'react';
-import { Search, Bell, ShieldCheck, ChevronDown, CheckCircle2, AlertCircle } from 'lucide-react';
-import { cchatApi } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { Search, Bell, ShieldCheck, ChevronDown, CheckCircle2, AlertCircle, Menu } from 'lucide-react';
+import { cchatApi, UserProfile } from '../services/api';
 
 interface PrivacyPageProps {
+  currentUser?: UserProfile | null;
   onNavigate?: (nav: string, topic?: string) => void;
+  onOpenMenu?: () => void;
 }
 
-export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
+export function PrivacyPage({ currentUser, onNavigate, onOpenMenu }: PrivacyPageProps) {
   const [requestType, setRequestType] = useState('Account data');
-  const [email, setEmail] = useState('maya@example.com');
+  const [email, setEmail] = useState(
+    currentUser?.email || (currentUser?.username ? `${currentUser.username}@example.com` : 'user@example.com')
+  );
   const [details, setDetails] = useState("I'd like to review my account information.");
+
+  useEffect(() => {
+    if (currentUser?.email) {
+      setEmail(currentUser.email);
+    } else if (currentUser?.username) {
+      setEmail(`${currentUser.username}@example.com`);
+    }
+  }, [currentUser]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -38,10 +50,28 @@ export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
       {/* Center Scrollable Area */}
       <div className="flex-1 flex flex-col border-r border-[#171722] min-w-0 bg-[#09090f]">
         {/* Top Header */}
-        <header className="h-16 px-8 border-b border-[#191924] flex items-center justify-between shrink-0 bg-[#0a0a0f]/90 backdrop-blur-md sticky top-0 z-10">
-          <h2 className="text-xl font-bold text-white tracking-tight">Privacy</h2>
-          <div className="flex items-center gap-4">
-            <div className="relative w-80">
+        <header className="h-16 px-4 sm:px-6 md:px-8 border-b border-[#191924] flex items-center justify-between shrink-0 bg-[#0a0a0f]/90 backdrop-blur-md sticky top-0 z-10">
+          <div className="flex items-center gap-3 min-w-0">
+            {onOpenMenu && (
+              <button
+                onClick={onOpenMenu}
+                className="md:hidden p-1.5 -ml-1 text-slate-400 hover:text-white rounded-lg hover:bg-[#161624] transition-colors cursor-pointer"
+                aria-label="Open menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
+            <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Privacy</h2>
+          </div>
+          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+            <button
+              onClick={() => onNavigate?.('Search')}
+              className="sm:hidden p-2 text-slate-400 hover:text-white rounded-full hover:bg-[#161624] transition-colors cursor-pointer"
+              title="Search"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+            <div className="relative w-48 sm:w-64 md:w-80 hidden sm:block">
               <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -50,7 +80,10 @@ export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
               />
               <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-mono bg-[#1c1c2b] px-1.5 py-0.5 rounded border border-[#29293d]">⌘ K</span>
             </div>
-            <button className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-[#161624] transition-colors cursor-pointer relative">
+            <button
+              onClick={() => onNavigate?.('Notifications')}
+              className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-[#161624] transition-colors cursor-pointer relative"
+            >
               <Bell className="w-4 h-4" />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
             </button>
@@ -58,7 +91,7 @@ export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 px-8 py-7 overflow-y-auto max-w-4xl">
+        <div className="flex-1 px-4 sm:px-6 md:px-8 py-5 sm:py-7 pb-20 md:pb-7 overflow-y-auto max-w-4xl">
           {/* Breadcrumb */}
           <div className="text-[11px] font-bold tracking-wider text-blue-400 uppercase">
             CCHAT / PRIVACY
@@ -165,7 +198,7 @@ export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
       </div>
 
       {/* Right Sidebar */}
-      <aside className="w-[300px] shrink-0 p-5 space-y-5 overflow-y-auto bg-[#09090f]">
+      <aside className="hidden lg:block w-[280px] xl:w-[300px] shrink-0 p-4 lg:p-5 space-y-5 overflow-y-auto bg-[#09090f] border-l border-[#171722]">
         {/* The identity rule card */}
         <div className="p-5 rounded-2xl bg-[#0f0f18] border border-[#1f1f2e] space-y-3.5 shadow-lg">
           <h4 className="text-xs font-bold text-white">The identity rule</h4>

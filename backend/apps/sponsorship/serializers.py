@@ -4,7 +4,8 @@ from .models import PartnerInquiry, SponsorPlacement, SponsorMenuItem, SponsorTr
 class PartnerInquirySerializer(serializers.ModelSerializer):
     class Meta:
         model = PartnerInquiry
-        fields = ['id', 'name', 'brand', 'email', 'placement_interest', 'idea', 'agreed_terms', 'created_at']
+        fields = ['id', 'name', 'brand', 'email', 'placement_interest', 'idea', 'agreed_terms', 'status', 'created_at']
+        read_only_fields = ['created_at']
 
 
 class SponsorMenuItemSerializer(serializers.ModelSerializer):

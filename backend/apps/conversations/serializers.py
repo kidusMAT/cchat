@@ -8,10 +8,31 @@ class MessageSerializer(serializers.ModelSerializer):
     sender_avatar = serializers.CharField(source='sender.avatar_url', read_only=True)
     is_maya = serializers.SerializerMethodField()
     is_self = serializers.SerializerMethodField()
+    is_read = serializers.SerializerMethodField()
+    reply_to_text = serializers.SerializerMethodField()
+    reply_to_sender = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ['id', 'conversation', 'sender', 'sender_name', 'sender_handle', 'sender_avatar', 'is_maya', 'is_self', 'text', 'is_excerpt_eligible', 'created_at']
+        fields = [
+            'id', 'conversation', 'sender', 'sender_name', 'sender_handle', 'sender_avatar',
+            'is_maya', 'is_self', 'is_read', 'text', 'attachment_url', 'attachment_name', 'attachment_type',
+            'is_edited', 'quick_reactions', 'reply_to', 'reply_to_text', 'reply_to_sender',
+            'is_excerpt_eligible', 'created_at'
+        ]
+
+    def get_is_read(self, obj):
+        return obj.seen_at is not None
+
+    def get_reply_to_text(self, obj):
+        if obj.reply_to:
+            return obj.reply_to.text[:100]
+        return None
+
+    def get_reply_to_sender(self, obj):
+        if obj.reply_to and obj.reply_to.sender:
+            return obj.reply_to.sender.display_name
+        return None
 
     def get_is_self(self, obj):
         request = self.context.get('request')
@@ -24,9 +45,9 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_is_maya(self, obj):
         # Backwards compatible alias for frontend rendering of current user's bubbles
-        is_self = self.get_is_self(obj)
-        if is_self:
-            return True
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return self.get_is_self(obj)
         return obj.sender.handle == '@mayamaybe'
 
 

@@ -34,6 +34,10 @@ class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
         qs = super().get_queryset()
         tab = self.request.query_params.get('tab')
         topic_tag = self.request.query_params.get('topic')
+        publisher = self.request.query_params.get('publisher') or self.request.query_params.get('handle')
+        if publisher:
+            handle = publisher if publisher.startswith('@') else f"@{publisher}"
+            qs = qs.filter(publishers__handle__iexact=handle)
 
         if topic_tag:
             qs = qs.filter(topic__tag=topic_tag)

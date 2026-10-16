@@ -105,8 +105,21 @@ def seed():
         (profiles['nina'], 'why is there a karaoke receipt', True),
         (maya, 'because we invested in the arts.', True),
     ]
+    created_fri_msgs = []
     for sender, text, eligible in fri_msgs:
-        Message.objects.get_or_create(conversation=c_fri, sender=sender, text=text, defaults={'is_excerpt_eligible': eligible})
+        m, _ = Message.objects.get_or_create(conversation=c_fri, sender=sender, text=text, defaults={'is_excerpt_eligible': eligible})
+        created_fri_msgs.append(m)
+
+    exc_fri, _ = PublicExcerpt.objects.get_or_create(
+        conversation=c_fri,
+        defaults={
+            'title': 'we said one drink.',
+            'topic': topics['#dating'],
+            'reads_count': 4800,
+        }
+    )
+    exc_fri.publishers.set([profiles['jules'], profiles['nina']])
+    exc_fri.messages.set(created_fri_msgs[:6])
 
     # Conversation 3: Work bestie
     c_work, _ = Conversation.objects.get_or_create(
@@ -138,7 +151,7 @@ def seed():
             'reads_count': 9100,
         }
     )
-    exc_work.publishers.set([maya])
+    exc_work.publishers.set([maya, profiles['leo']])
     exc_work.messages.set(created_work_msgs[:6])
 
     # Conversation 4: The interview

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authStorage, cchatApi, UserProfile } from '../services/api';
 
 // Shared double chat-bubble logo icon (duplicated locally so LoginPage is standalone)
 const CchatLogoIcon = () => (
@@ -12,7 +13,7 @@ const CchatLogoIcon = () => (
 );
 
 interface LoginPageProps {
-  onLogin: (handle: string) => void;
+  onLogin: (user: UserProfile | string) => void;
 }
 
 type Tab = 'login' | 'signup';
@@ -45,19 +46,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
     setLoginLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/login/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: loginHandle.trim(), password: loginPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setLoginError(data.detail || 'Invalid handle or password.');
+      const data = await cchatApi.login(loginHandle.trim(), loginPassword);
+      localStorage.setItem('cchat_logged_in', 'true');
+      if (data.user) {
+        localStorage.setItem('cchat_user', JSON.stringify(data.user));
+        onLogin(data.user);
       } else {
-        onLogin(data.handle || loginHandle.trim());
+        onLogin(loginHandle.trim());
       }
-    } catch {
-      setLoginError('Cannot reach server. Make sure the backend is running.');
+    } catch (err: any) {
+      setLoginError(err.message || 'Invalid username/handle or password.');
     } finally {
       setLoginLoading(false);
     }
@@ -82,33 +80,57 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
     setSignupLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/signup/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          handle: signupHandle.trim().startsWith('@') ? signupHandle.trim() : `@${signupHandle.trim()}`,
-          display_name: signupDisplayName.trim(),
-          password: signupPassword,
-        }),
+      const cleanHandle = signupHandle.trim().startsWith('@') ? signupHandle.trim() : `@${signupHandle.trim()}`;
+      const data = await cchatApi.register({
+        username: cleanHandle.replace(/^@/, ''),
+        handle: cleanHandle,
+        display_name: signupDisplayName.trim(),
+        password: signupPassword,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setSignupError(data.detail || Object.values(data).flat().join(' ') || 'Sign-up failed.');
+      localStorage.setItem('cchat_logged_in', 'true');
+      if (data.user) {
+        localStorage.setItem('cchat_user', JSON.stringify(data.user));
+        onLogin(data.user);
       } else {
         setSignupSuccess('Account created! You can now log in.');
         setTab('login');
-        setLoginHandle(signupHandle.trim().startsWith('@') ? signupHandle.trim() : `@${signupHandle.trim()}`);
+        setLoginHandle(cleanHandle);
       }
-    } catch {
-      setSignupError('Cannot reach server. Make sure the backend is running.');
+    } catch (err: any) {
+      setSignupError(err.message || 'Sign-up failed.');
     } finally {
       setSignupLoading(false);
     }
   };
 
   // ── Demo / bypass login (for local dev) ─────────────────────
-  const handleDemoLogin = () => {
-    onLogin('@mayamaybe');
+  const handleDemoLogin = async () => {
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const data = await cchatApi.demoLogin('maya');
+      localStorage.setItem('cchat_logged_in', 'true');
+      if (data.user) {
+        localStorage.setItem('cchat_user', JSON.stringify(data.user));
+        onLogin(data.user);
+      } else {
+        onLogin('@mayamaybe');
+      }
+    } catch {
+      const fallbackUser: UserProfile = {
+        id: 1,
+        handle: '@mayamaybe',
+        display_name: 'Maya Chen',
+        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
+        bio: 'A little less posting. A lot more plot.',
+      };
+      authStorage.setToken('demo-token-maya');
+      localStorage.setItem('cchat_logged_in', 'true');
+      localStorage.setItem('cchat_user', JSON.stringify(fallbackUser));
+      onLogin(fallbackUser);
+    } finally {
+      setLoginLoading(false);
+    }
   };
 
   return (
@@ -201,12 +223,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400">Handle</label>
+                <label className="text-xs font-semibold text-slate-400">Username or @handle</label>
                 <input
                   type="text"
                   value={loginHandle}
                   onChange={e => setLoginHandle(e.target.value)}
-                  placeholder="@mayamaybe"
+                  placeholder="kidusMAT or @kidusMAT"
                   autoComplete="username"
                   className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
                 />
@@ -270,7 +292,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   type="text"
                   value={signupDisplayName}
                   onChange={e => setSignupDisplayName(e.target.value)}
-                  placeholder="Maya Chen"
+                  placeholder="Alex Morgan"
                   autoComplete="name"
                   className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
                 />
@@ -284,7 +306,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                     type="text"
                     value={signupHandle.startsWith('@') ? signupHandle.slice(1) : signupHandle}
                     onChange={e => setSignupHandle(e.target.value)}
-                    placeholder="mayamaybe"
+                    placeholder="alexm"
                     autoComplete="username"
                     className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
                   />

@@ -110,3 +110,29 @@ class ConversationSecurityTests(TestCase):
         self.assertEqual(res.data['title'], 'Coffee Meetup')
         self.assertEqual(len(res.data['messages']), 1)
         self.assertEqual(res.data['messages'][0]['text'], 'Starting brand new chat')
+
+    def test_participant_can_send_message_with_attachment(self):
+        self.client.force_authenticate(user=self.user_jules)
+        res = self.client.post(f'/api/chats/{self.conv.id}/send_message/', {
+            'text': 'Here is the diagram',
+            'attachment_url': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            'attachment_name': 'diagram.png',
+            'attachment_type': 'image'
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['attachment_name'], 'diagram.png')
+        self.assertEqual(res.data['attachment_type'], 'image')
+        self.assertTrue(res.data['attachment_url'].startswith('data:image/png'))
+
+    def test_create_chat_with_attachment(self):
+        self.client.force_authenticate(user=self.user_maya)
+        res = self.client.post('/api/chats/', {
+            'recipient_handle': '@jules_test',
+            'text': 'Doc attached',
+            'attachment_url': 'data:application/pdf;base64,JVBERi0xLjQK',
+            'attachment_name': 'report.pdf',
+            'attachment_type': 'document'
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['messages'][0]['attachment_name'], 'report.pdf')
+        self.assertEqual(res.data['messages'][0]['attachment_type'], 'document')

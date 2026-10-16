@@ -83,3 +83,50 @@ class AccountsAuthTests(TestCase):
         # Trying to access me with old token should fail
         me_res = self.client.get('/api/auth/me/')
         self.assertEqual(me_res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_user_profile_lookup_variations(self):
+        other_user = User.objects.create_user(username='otheruser', password='Password123!')
+        other_profile = UserProfile.objects.create(
+            user=other_user,
+            handle='@otheruser',
+            display_name='Other User',
+            bio='Other bio'
+        )
+
+        # Lookup by ID
+        res_id = self.client.get(f'/api/users/{other_profile.id}/')
+        self.assertEqual(res_id.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_id.data['handle'], '@otheruser')
+
+        # Lookup by @handle
+        res_handle = self.client.get('/api/users/@otheruser/')
+        self.assertEqual(res_handle.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_handle.data['display_name'], 'Other User')
+
+        # Lookup by handle without @
+        res_plain = self.client.get('/api/users/otheruser/')
+        self.assertEqual(res_plain.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_plain.data['display_name'], 'Other User')
+
+    def test_view_other_profile_is_following(self):
+        other_user = User.objects.create_user(username='creator', password='Password123!')
+        other_profile = UserProfile.objects.create(
+            user=other_user,
+            handle='@creator',
+            display_name='Creative Mind'
+        )
+
+        self.client.force_authenticate(user=self.user)
+        # Not following yet
+        res = self.client.get(f'/api/users/{other_profile.id}/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data['is_following'])
+
+        # Toggle follow
+        follow_res = self.client.post(f'/api/users/{other_profile.id}/toggle_follow/')
+        self.assertEqual(follow_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(follow_res.data['is_following'])
+
+        # Now check profile
+        res_after = self.client.get(f'/api/users/{other_profile.id}/')
+        self.assertTrue(res_after.data['is_following'])

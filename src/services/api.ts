@@ -11,6 +11,10 @@ export interface UserProfile {
   avatar_url: string;
   bio: string;
   created_at?: string;
+  is_staff?: boolean;
+  followers_count?: number;
+  following_count?: number;
+  is_following?: boolean;
 }
 
 export interface ChatSummary {
@@ -33,7 +37,16 @@ export interface ChatMessage {
   sender_avatar: string;
   is_maya: boolean;
   is_self?: boolean;
+  is_read?: boolean;
   text: string;
+  attachment_url?: string;
+  attachment_name?: string;
+  attachment_type?: string;
+  is_edited?: boolean;
+  quick_reactions?: Record<string, string[]>;
+  reply_to?: number | null;
+  reply_to_text?: string | null;
+  reply_to_sender?: string | null;
   is_excerpt_eligible: boolean;
   created_at: string;
 }
@@ -202,13 +215,25 @@ export const cchatApi = {
   },
 
   async getMe(): Promise<UserProfile> {
-    let res = await apiFetch('/auth/me/');
-    if (res.status === 401 || res.status === 403) {
-      // Automatically obtain a demo session for the initial load if no token exists
-      const demo = await this.demoLogin('maya');
-      return demo.user;
+    const res = await apiFetch('/auth/me/');
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        authStorage.setToken(null);
+      }
+      throw new Error('Failed to load user profile');
     }
-    if (!res.ok) throw new Error('Failed to load user profile');
+    return res.json();
+  },
+
+  async updateMe(data: Partial<UserProfile>): Promise<UserProfile> {
+    const res = await apiFetch('/auth/me/', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update profile' }));
+      throw new Error(err.detail || 'Failed to update profile');
+    }
     return res.json();
   },
 
@@ -219,29 +244,49 @@ export const cchatApi = {
     return data.results || data;
   },
 
+  async getFollowing(): Promise<UserProfile[]> {
+    const res = await apiFetch('/users/following/');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.results || data;
+  },
+
+  async toggleFollow(targetIdOrHandle: number | string): Promise<{ is_following: boolean; following_count: number; followers_count: number }> {
+    const res = await apiFetch(`/users/${targetIdOrHandle}/toggle_follow/`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update follow status' }));
+      throw new Error(err.detail || 'Failed to update follow status');
+    }
+    return res.json();
+  },
+
+  async getUserProfile(idOrHandle: number | string): Promise<UserProfile> {
+    const cleanLookup = typeof idOrHandle === 'string' ? idOrHandle.trim() : idOrHandle;
+    const res = await apiFetch(`/users/${cleanLookup}/`);
+    if (!res.ok) throw new Error('User not found');
+    return res.json();
+  },
+
   // Conversations
   async getChats(): Promise<ChatSummary[]> {
-    let res = await apiFetch('/chats/');
-    if (res.status === 401 || res.status === 403) {
-      await this.demoLogin('maya');
-      res = await apiFetch('/chats/');
-    }
+    const res = await apiFetch('/chats/');
     if (!res.ok) throw new Error('Failed to load chats');
     const data = await res.json();
     return data.results || data;
   },
 
   async getChatDetail(id: number | string): Promise<ChatDetail> {
-    let res = await apiFetch(`/chats/${id}/`);
-    if (res.status === 401 || res.status === 403) {
-      await this.demoLogin('maya');
-      res = await apiFetch(`/chats/${id}/`);
-    }
+    const res = await apiFetch(`/chats/${id}/`);
     if (!res.ok) throw new Error(`Failed to load chat ${id}`);
     return res.json();
   },
 
-  async createChat(recipientIdOrHandle: number | string, text?: string, title?: string): Promise<ChatDetail> {
+  async createChat(
+    recipientIdOrHandle: number | string,
+    text?: string,
+    title?: string,
+    attachment?: { url: string; name: string; type: string }
+  ): Promise<ChatDetail> {
     const body: Record<string, any> = {};
     if (typeof recipientIdOrHandle === 'number') {
       body.recipient_id = recipientIdOrHandle;
@@ -250,31 +295,85 @@ export const cchatApi = {
     }
     if (text) body.text = text;
     if (title) body.title = title;
+    if (attachment) {
+      body.attachment_url = attachment.url;
+      body.attachment_name = attachment.name;
+      body.attachment_type = attachment.type;
+    }
 
-    let res = await apiFetch('/chats/', {
+    const res = await apiFetch('/chats/', {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    if (res.status === 401 || res.status === 403) {
-      await this.demoLogin('maya');
-      res = await apiFetch('/chats/', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-    }
     if (!res.ok) throw new Error('Failed to start chat');
     return res.json();
   },
 
-  async sendMessage(chatId: number | string, text: string): Promise<ChatMessage> {
+  async sendMessage(
+    chatId: number | string,
+    text: string,
+    attachment?: { url: string; name: string; type: string },
+    replyToId?: number
+  ): Promise<ChatMessage> {
+    const body: Record<string, any> = { text };
+    if (attachment) {
+      body.attachment_url = attachment.url;
+      body.attachment_name = attachment.name;
+      body.attachment_type = attachment.type;
+    }
+    if (replyToId) {
+      body.reply_to = replyToId;
+    }
     const res = await apiFetch(`/chats/${chatId}/send_message/`, {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to send message' }));
       throw new Error(err.detail || 'Failed to send message');
     }
+    return res.json();
+  },
+
+  async editMessage(chatId: number | string, messageId: number | string, text: string): Promise<ChatMessage> {
+    const res = await apiFetch(`/chats/${chatId}/messages/${messageId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to edit message' }));
+      throw new Error(err.detail || 'Failed to edit message');
+    }
+    return res.json();
+  },
+
+  async deleteMessage(chatId: number | string, messageId: number | string): Promise<void> {
+    const res = await apiFetch(`/chats/${chatId}/messages/${messageId}/delete/`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to delete message' }));
+      throw new Error(err.detail || 'Failed to delete message');
+    }
+  },
+
+  async reactChatMessage(chatId: number | string, messageId: number | string, emoji: string): Promise<ChatMessage> {
+    const res = await apiFetch(`/chats/${chatId}/messages/${messageId}/react/`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to react to message' }));
+      throw new Error(err.detail || 'Failed to react to message');
+    }
+    return res.json();
+  },
+
+  async pinMessage(chatId: number | string, messageId: number | string): Promise<{ is_pinned: boolean; pinned_message_id: number | null }> {
+    const res = await apiFetch(`/chats/${chatId}/messages/${messageId}/pin/`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to pin message');
     return res.json();
   },
 
@@ -296,10 +395,11 @@ export const cchatApi = {
   },
 
   // Excerpts & Feed
-  async getExcerpts(params?: { tab?: string; topic?: string }): Promise<PublicExcerptItem[]> {
+  async getExcerpts(params?: { tab?: string; topic?: string; publisher?: string }): Promise<PublicExcerptItem[]> {
     const query = new URLSearchParams();
     if (params?.tab) query.set('tab', params.tab.toLowerCase());
     if (params?.topic) query.set('topic', params.topic);
+    if (params?.publisher) query.set('publisher', params.publisher);
 
     const queryString = query.toString() ? `?${query.toString()}` : '';
     const res = await apiFetch(`/excerpts/${queryString}`);
@@ -309,21 +409,10 @@ export const cchatApi = {
   },
 
   async reactMessage(msgId: number, type: 'heart' | 'cap' | 'skull' | 'fire') {
-    let res = await apiFetch(`/excerpts/messages/${msgId}/react/`, {
+    const res = await apiFetch(`/excerpts/messages/${msgId}/react/`, {
       method: 'POST',
       body: JSON.stringify({ type }),
     });
-    if (res.status === 401 || res.status === 403) {
-      const err = await res.clone().json().catch(() => ({}));
-      if (err.detail && err.detail.includes('private')) {
-        throw new Error(err.detail);
-      }
-      await this.demoLogin('maya');
-      res = await apiFetch(`/excerpts/messages/${msgId}/react/`, {
-        method: 'POST',
-        body: JSON.stringify({ type }),
-      });
-    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to react' }));
       throw new Error(err.detail || 'Failed to react');
@@ -332,15 +421,9 @@ export const cchatApi = {
   },
 
   async toggleSaveExcerpt(excerptId: number): Promise<{ saved: boolean; detail: string }> {
-    let res = await apiFetch(`/excerpts/${excerptId}/toggle_save/`, {
+    const res = await apiFetch(`/excerpts/${excerptId}/toggle_save/`, {
       method: 'POST',
     });
-    if (res.status === 401 || res.status === 403) {
-      await this.demoLogin('maya');
-      res = await apiFetch(`/excerpts/${excerptId}/toggle_save/`, {
-        method: 'POST',
-      });
-    }
     if (!res.ok) throw new Error('Failed to toggle save');
     return res.json();
   },
@@ -354,11 +437,7 @@ export const cchatApi = {
   },
 
   async getSavedExcerpts(): Promise<SavedExcerptItem[]> {
-    let res = await apiFetch('/saved/');
-    if (res.status === 401 || res.status === 403) {
-      await this.demoLogin('maya');
-      res = await apiFetch('/saved/');
-    }
+    const res = await apiFetch('/saved/');
     if (!res.ok) throw new Error('Failed to load saved excerpts');
     const data = await res.json();
     return data.results || data;
@@ -424,6 +503,72 @@ export const cchatApi = {
   async getAfterHoursDetail(): Promise<AfterHoursDetail> {
     const res = await apiFetch('/sponsorship/after-hours/');
     if (!res.ok) throw new Error('Failed to load After Hours detail');
+    return res.json();
+  },
+
+  // ── Admin-only API ────────────────────────────────────────────
+  async getAdminStats(): Promise<{
+    total_users: number;
+    total_public_chats: number;
+    total_reactions: number;
+    total_reads: number;
+    total_topics: number;
+    new_this_week: number;
+  }> {
+    const res = await apiFetch('/admin/stats/');
+    if (!res.ok) throw new Error('Failed to load admin stats');
+    return res.json();
+  },
+
+  async getAdminReports(): Promise<Array<{
+    id: number; reason: string; context: string; status: string; reporter: string; created_at: string;
+  }>> {
+    const res = await apiFetch('/admin/reports/');
+    if (!res.ok) throw new Error('Failed to load reports');
+    return res.json();
+  },
+
+  async patchReport(id: number, status: string): Promise<{ detail: string; status: string }> {
+    const res = await apiFetch(`/admin/reports/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error('Failed to update report');
+    return res.json();
+  },
+
+  async getAdminPrivacyRequests(): Promise<Array<{
+    id: number; name: string; email: string; request_type: string; details: string; status: string; created_at: string;
+  }>> {
+    const res = await apiFetch('/admin/privacy-requests/');
+    if (!res.ok) throw new Error('Failed to load privacy requests');
+    return res.json();
+  },
+
+  async patchPrivacyRequest(id: number, status: string): Promise<{ detail: string; status: string }> {
+    const res = await apiFetch(`/admin/privacy-requests/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error('Failed to update privacy request');
+    return res.json();
+  },
+
+  async getAdminInquiries(): Promise<Array<{
+    id: number; name: string; brand: string; email: string; placement_interest: string;
+    idea: string; agreed_terms: boolean; status: string; created_at: string;
+  }>> {
+    const res = await apiFetch('/admin/inquiries/');
+    if (!res.ok) throw new Error('Failed to load inquiries');
+    return res.json();
+  },
+
+  async patchInquiry(id: number, status: string): Promise<{ detail: string; status: string }> {
+    const res = await apiFetch(`/admin/inquiries/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error('Failed to update inquiry');
     return res.json();
   },
 };

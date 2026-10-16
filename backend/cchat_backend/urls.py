@@ -17,8 +17,14 @@ from apps.publications.views import (
     SavedExcerptViewSet,
     react_message,
 )
-from apps.moderation.views import SubmitReportView, SubmitPrivacyRequestView
-from apps.sponsorship.views import SubmitInquiryView, AfterHoursDetailView
+from apps.publications.admin_views import AdminStatsView
+from apps.moderation.views import (
+    SubmitReportView,
+    SubmitPrivacyRequestView,
+    AdminReportsView,
+    AdminPrivacyRequestsView,
+)
+from apps.sponsorship.views import SubmitInquiryView, AfterHoursDetailView, AdminInquiriesView
 
 router = DefaultRouter()
 router.register(r'users', UserProfileViewSet, basename='user')
@@ -32,6 +38,7 @@ urlpatterns = [
 
     # Auth routes
     path('api/auth/register/', RegisterView.as_view(), name='auth-register'),
+    path('api/auth/signup/', RegisterView.as_view(), name='auth-signup'),
     path('api/auth/login/', LoginView.as_view(), name='auth-login'),
     path('api/auth/demo-login/', DemoLoginView.as_view(), name='auth-demo-login'),
     path('api/auth/logout/', LogoutView.as_view(), name='auth-logout'),
@@ -47,6 +54,15 @@ urlpatterns = [
     # Sponsorship
     path('api/sponsorship/inquiry/', SubmitInquiryView.as_view(), name='submit-inquiry'),
     path('api/sponsorship/after-hours/', AfterHoursDetailView.as_view(), name='after-hours-detail'),
+
+    # ── Admin-only endpoints ────────────────────────────────────────
+    path('api/admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
+    path('api/admin/reports/', AdminReportsView.as_view(), name='admin-reports'),
+    path('api/admin/reports/<int:report_id>/', AdminReportsView.as_view(), name='admin-report-detail'),
+    path('api/admin/privacy-requests/', AdminPrivacyRequestsView.as_view(), name='admin-privacy'),
+    path('api/admin/privacy-requests/<int:req_id>/', AdminPrivacyRequestsView.as_view(), name='admin-privacy-detail'),
+    path('api/admin/inquiries/', AdminInquiriesView.as_view(), name='admin-inquiries'),
+    path('api/admin/inquiries/<int:inquiry_id>/', AdminInquiriesView.as_view(), name='admin-inquiry-detail'),
 
     # ViewSet routes
     path('api/', include(router.urls)),

@@ -1,12 +1,19 @@
 from django.db import models
 
 class PartnerInquiry(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('reviewed', 'Reviewed'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    ]
     name = models.CharField(max_length=120)
     brand = models.CharField(max_length=120)
     email = models.EmailField()
     placement_interest = models.CharField(max_length=100)
     idea = models.TextField()
     agreed_terms = models.BooleanField(default=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
