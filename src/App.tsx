@@ -32,6 +32,7 @@ import {
   ShieldAlert,
   Camera,
   ArrowLeft,
+  ArrowRight,
   FileText,
   Paperclip
 } from 'lucide-react';
@@ -272,6 +273,7 @@ interface DiscoverMessage {
   id: string;
   sender: string;
   isRight: boolean;
+  isAnonymous?: boolean;
   text: string;
   badge?: string;
   badgePos?: 'left' | 'right';
@@ -285,6 +287,7 @@ interface DiscoverStory {
   title: string;
   authorName: string;
   authorHandle: string;
+  authorsSummary?: string;
   authorAvatar?: string;
   authorInitials?: string;
   timeAgo: string;
@@ -296,7 +299,13 @@ interface DiscoverStory {
     title: string;
   };
   messages: DiscoverMessage[];
+  sections?: Array<{
+    header: string;
+    topicTag: string;
+    firstMessageId: string;
+  }>;
 }
+
 
 const DISCOVER_STORIES: DiscoverStory[] = [
   {
@@ -314,6 +323,10 @@ const DISCOVER_STORIES: DiscoverStory[] = [
       label: 'UP NEXT / ROOMMATE LORE',
       title: 'the rent is due. the raccoon is not on the lease.',
     },
+    sections: [
+      { header: 'The Metaphor', topicTag: '#dating', firstMessageId: 's0m1' },
+      { header: 'The Second Interview', topicTag: '#pastaandbenefits', firstMessageId: 's0m4' },
+    ],
     messages: [
       { id: 's0m1', sender: 'Anonymous', isRight: false, text: 'i brought a résumé to the date.', badge: '🧢', badgePos: 'right', badgeAnim: 'animate-bounce', bubbleColor: 'bg-[#152a48] border-[#1e3d68] text-slate-100' },
       { id: 's0m2', sender: 'Maya', isRight: true, text: 'please tell me this is a metaphor', bubbleColor: 'bg-[#421d33] border-[#5d2a49] text-rose-50' },
@@ -338,6 +351,10 @@ const DISCOVER_STORIES: DiscoverStory[] = [
       label: 'UP NEXT / FRIDAY PLANS',
       title: 'we said one drink.',
     },
+    sections: [
+      { header: 'The New Roommate', topicTag: '#roommatelore', firstMessageId: 's1m1' },
+      { header: 'The Air Fryer Feud', topicTag: '#kitchenpolitics', firstMessageId: 's1m3' },
+    ],
     messages: [
       { id: 's1m1', sender: 'Anonymous', isRight: false, text: 'who adopted a raccoon', bubbleColor: 'bg-[#152a48] border-[#1e3d68] text-slate-100' },
       { id: 's1m2', sender: 'Jules', isRight: true, text: 'nobody adopted him. he chose us.', badge: '🦝', badgePos: 'left', bubbleColor: 'bg-[#421d33] border-[#5d2a49] text-rose-50' },
@@ -347,6 +364,7 @@ const DISCOVER_STORIES: DiscoverStory[] = [
       { id: 's1m6', sender: 'Jules', isRight: true, text: 'tell that to the shared calendar', badge: '🗓️', badgePos: 'left', bubbleColor: 'bg-[#421d33] border-[#5d2a49] text-rose-50' },
     ],
   },
+
   {
     id: 'story-2',
     backendId: 2,
@@ -424,31 +442,254 @@ const INITIAL_REACTIONS: Record<string, { heart: number; cap: number; skull: num
   s3m3: { heart: 55, cap: 640, skull: 1350, fire: 80, userReacted: null },
   s3m4: { heart: 980, cap: 22, skull: 1950, fire: 2400, userReacted: 'fire' },
   s3m5: { heart: 110, cap: 890, skull: 1620, fire: 190, userReacted: 'cap' },
-  s3m6: { heart: 3200, cap: 12, skull: 840, fire: 910, userReacted: 'heart' },
 };
 
+export function getMessageBackgroundByReaction(
+  reactionCounts?: {
+    heart?: number;
+    cap?: number;
+    skull?: number;
+    fire?: number;
+    hearts?: number;
+    caps?: number;
+    skulls?: number;
+    fires?: number;
+  } | null,
+  isRight: boolean = false
+): { bubbleClass: string; dominantEmoji: string | null } {
+  if (!reactionCounts) {
+    return {
+      bubbleClass: isRight
+        ? 'bg-[#1c2233] border border-[#2c3752] text-slate-100'
+        : 'bg-[#12141f] border border-[#1e2333] text-slate-200',
+      dominantEmoji: null,
+    };
+  }
+
+  const heart = (reactionCounts.heart ?? reactionCounts.hearts) || 0;
+  const cap = (reactionCounts.cap ?? reactionCounts.caps) || 0;
+  const skull = (reactionCounts.skull ?? reactionCounts.skulls) || 0;
+  const fire = (reactionCounts.fire ?? reactionCounts.fires) || 0;
+
+  const maxVal = Math.max(heart, cap, skull, fire);
+
+  if (maxVal <= 0) {
+    return {
+      bubbleClass: isRight
+        ? 'bg-[#1c2233] border border-[#2c3752] text-slate-100'
+        : 'bg-[#12141f] border border-[#1e2333] text-slate-200',
+      dominantEmoji: null,
+    };
+  }
+
+  // Set the message background strictly according to the highest reaction received (matte dark theme, no glowing)
+  if (fire === maxVal) {
+    return {
+      bubbleClass: 'bg-gradient-to-br from-[#361e10] via-[#2a170c] to-[#1c1008] border border-[#6e3b18] text-amber-100',
+      dominantEmoji: '🔥',
+    };
+  }
+
+  if (skull === maxVal) {
+    return {
+      bubbleClass: 'bg-gradient-to-br from-[#241530] via-[#1c1026] to-[#120a1a] border border-[#532470] text-purple-100',
+      dominantEmoji: '💀',
+    };
+  }
+
+  if (cap === maxVal) {
+    return {
+      bubbleClass: 'bg-gradient-to-br from-[#142338] via-[#0f1b2b] to-[#0a121d] border border-[#234570] text-blue-50',
+      dominantEmoji: '🧢',
+    };
+  }
+
+  if (heart === maxVal) {
+    return {
+      bubbleClass: 'bg-gradient-to-br from-[#3b172a] via-[#2c1220] to-[#1e0c16] border border-[#6b2546] text-rose-50',
+      dominantEmoji: '❤️',
+    };
+  }
+
+  return {
+    bubbleClass: isRight
+      ? 'bg-[#1c2233] border border-[#2c3752] text-slate-100'
+      : 'bg-[#12141f] border border-[#1e2333] text-slate-200',
+    dominantEmoji: null,
+  };
+}
+
 function DiscoverPage({
+  filterPublisher,
+  targetExcerptId,
+  onClearFilter,
   onNavigateTab,
   onNavigate,
   onOpenMenu,
 }: {
+  filterPublisher?: string | null;
+  targetExcerptId?: number | null;
+  onClearFilter?: () => void;
   onNavigateTab?: (tab: string) => void;
-  onNavigate?: (nav: string, topic?: string) => void;
+  onNavigate?: (nav: string, topic?: string, extraParam?: any) => void;
   onOpenMenu?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'For you' | 'Following' | 'Fresh'>('For you');
   const [savedStories, setSavedStories] = useState<Record<number, boolean>>({});
   const [reactions, setReactions] = useState(INITIAL_REACTIONS);
-  const [activeStoryIdx, setActiveStoryIdx] = useState(0);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [activeInPageIdx, setActiveInPageIdx] = useState(0);
+  const [backendStories, setBackendStories] = useState<DiscoverStory[]>([]);
+  const [loadingBackend, setLoadingBackend] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setLoadingBackend(true);
+    cchatApi
+      .getExcerpts({
+        publisher: filterPublisher || undefined,
+        tab: filterPublisher ? undefined : (activeTab === 'Fresh' ? 'fresh' : activeTab === 'Following' ? 'following' : undefined),
+      })
+      .then((excerpts) => {
+        if (!isMounted) return;
+        if (Array.isArray(excerpts) && excerpts.length > 0) {
+          let mapped: DiscoverStory[] = excerpts.map((e) => {
+            const authorParts =
+              e.authors_summary?.split('×')[0]?.trim() ||
+              e.authors_summary?.split('&')[0]?.trim() ||
+              'Anonymous';
+            const authorHandle = authorParts.startsWith('@')
+              ? authorParts
+              : `@${authorParts.toLowerCase().replace(/\s+/g, '')}`;
+            const authorName = authorParts.replace('@', '');
+
+            const authorMsg = e.messages.find((m) => !m.is_anonymous && m.sender_avatar);
+            const authorAvatar = authorMsg?.sender_avatar;
+
+            const messages: DiscoverMessage[] = (e.messages || []).map((m) => {
+              const isRight = !m.is_anonymous;
+              const bubbleColor = isRight
+                ? 'bg-[#421d33] border-[#5d2a49] text-rose-50'
+                : 'bg-[#152a48] border-[#1e3d68] text-slate-100';
+
+              const msgKey = `backend-${e.id}-m-${m.id}`;
+              if (m.reactions) {
+                setReactions((prev) => ({
+                  ...prev,
+                  [msgKey]: {
+                    heart: m.reactions.heart || 0,
+                    cap: m.reactions.cap || 0,
+                    skull: m.reactions.skull || 0,
+                    fire: m.reactions.fire || 0,
+                    userReacted: m.reactions.user_reacted || null,
+                  },
+                }));
+              }
+
+              return {
+                id: msgKey,
+                sender: m.sender_display,
+                isRight,
+                isAnonymous: m.is_anonymous,
+                text: m.text,
+                bubbleColor,
+              };
+            });
+
+            const sections =
+              e.sections && e.sections.length > 0
+                ? e.sections.map((s) => {
+                    const firstMsg =
+                      s.messages && s.messages.length > 0
+                        ? s.messages[0]
+                        : s.message_ids && s.message_ids.length > 0
+                        ? { id: s.message_ids[0] }
+                        : null;
+                    const firstMessageId = firstMsg
+                      ? `backend-${e.id}-m-${firstMsg.id}`
+                      : messages[0]?.id || '';
+                    return {
+                      header: s.header,
+                      topicTag: s.topic_tag,
+                      firstMessageId,
+                    };
+                  })
+                : undefined;
+
+            const isPartnerAnon = e.authors_summary?.includes('Anonymous');
+            let sanitizedTitle = e.title || `${e.topic?.tag || '#dating'} dialogue`;
+            if (isPartnerAnon && (sanitizedTitle.toLowerCase().includes('maya') || sanitizedTitle.toLowerCase().includes('chen'))) {
+              sanitizedTitle = `${e.topic?.tag || '#dating'} dialogue`;
+            }
+
+            return {
+              id: `story-backend-${e.id}`,
+              backendId: e.id,
+              title: sanitizedTitle,
+              authorName,
+              authorHandle,
+              authorsSummary: e.authors_summary,
+              authorAvatar: authorAvatar || undefined,
+              authorInitials: authorName.slice(0, 2).toUpperCase() || 'CC',
+              timeAgo: 'Recently',
+              topicTag: e.topic?.tag || '#dating',
+              readingNow: `${Math.floor(Math.random() * 200 + 100)} reading now`,
+              reads: `${e.reads_count} reads`,
+              upNext: {
+                label: 'UP NEXT',
+                title: 'Next story',
+              },
+              messages,
+              sections,
+            };
+          });
+
+          if (targetExcerptId) {
+            const targetIdx = mapped.findIndex((s) => s.backendId === targetExcerptId);
+            if (targetIdx > 0) {
+              const targetItem = mapped[targetIdx];
+              mapped = [targetItem, ...mapped.filter((_, i) => i !== targetIdx)];
+            }
+          }
+
+          setBackendStories(mapped);
+          setPageIndex(0);
+          setActiveInPageIdx(0);
+        } else {
+          setBackendStories([]);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load backend excerpts:', err);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingBackend(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, filterPublisher, targetExcerptId]);
+
+  const allStories = filterPublisher
+    ? backendStories
+    : (backendStories.length > 0 ? [...backendStories, ...DISCOVER_STORIES] : DISCOVER_STORIES);
+
+  // TikTok 3-Chats-at-a-Time Pagination
+  const CHATS_PER_PAGE = 3;
+  const totalPages = Math.max(1, Math.ceil(allStories.length / CHATS_PER_PAGE));
+  const startIndex = pageIndex * CHATS_PER_PAGE;
+  const currentBatchStories = allStories.slice(startIndex, startIndex + CHATS_PER_PAGE);
 
   const feedContainerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
   const touchStartX = useRef(0);
 
-  const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : n.toString();
+  const fmt = (n: number) =>
+    n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : n.toString();
 
   const toggle = async (key: string, type: 'heart' | 'cap' | 'skull' | 'fire') => {
-    setReactions(prev => {
+    setReactions((prev) => {
       const c = prev[key] || { heart: 0, cap: 0, skull: 0, fire: 0, userReacted: null };
       const already = c.userReacted === type;
       return {
@@ -460,10 +701,20 @@ function DiscoverPage({
         },
       };
     });
+
+    if (key.startsWith('backend-')) {
+      const parts = key.split('-m-');
+      if (parts[1]) {
+        const msgId = parseInt(parts[1], 10);
+        if (!isNaN(msgId)) {
+          cchatApi.reactMessage(msgId, type).catch((err) => console.warn('Reaction error:', err));
+        }
+      }
+    }
   };
 
   const handleToggleSave = async (storyIdx: number, backendId: number) => {
-    setSavedStories(prev => ({ ...prev, [storyIdx]: !prev[storyIdx] }));
+    setSavedStories((prev) => ({ ...prev, [storyIdx]: !prev[storyIdx] }));
     try {
       await cchatApi.toggleSaveExcerpt(backendId);
     } catch (e) {
@@ -472,6 +723,11 @@ function DiscoverPage({
   };
 
   const handleTabClick = (tab: 'For you' | 'Following' | 'Fresh') => {
+    if (filterPublisher && onClearFilter) {
+      onClearFilter();
+    }
+    setPageIndex(0);
+    setActiveInPageIdx(0);
     if (tab === 'Following' && onNavigateTab) {
       onNavigateTab('Following');
     } else {
@@ -479,12 +735,35 @@ function DiscoverPage({
     }
   };
 
-  const scrollToStory = (targetIndex: number) => {
-    const clampedIndex = (targetIndex + DISCOVER_STORIES.length) % DISCOVER_STORIES.length;
-    const el = document.getElementById(`discover-story-${clampedIndex}`);
+  const scrollToStoryInBatch = (targetInPageIdx: number) => {
+    // If moving beyond the 3rd chat on the current page -> Advance to the next 3 chats (TikTok style!)
+    if (targetInPageIdx >= currentBatchStories.length) {
+      const nextPage = (pageIndex + 1) % totalPages;
+      setPageIndex(nextPage);
+      setActiveInPageIdx(0);
+      setTimeout(() => {
+        feedContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 50);
+      return;
+    }
+
+    // If moving before the 1st chat on the current page -> Load previous 3 chats
+    if (targetInPageIdx < 0) {
+      if (pageIndex > 0) {
+        setPageIndex((p) => p - 1);
+        setActiveInPageIdx(CHATS_PER_PAGE - 1);
+        setTimeout(() => {
+          const el = document.getElementById(`discover-story-${CHATS_PER_PAGE - 1}`);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
+      }
+      return;
+    }
+
+    const el = document.getElementById(`discover-story-${targetInPageIdx}`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveStoryIdx(clampedIndex);
+      setActiveInPageIdx(targetInPageIdx);
     }
   };
 
@@ -498,32 +777,32 @@ function DiscoverPage({
     const deltaY = touchStartY.current - e.changedTouches[0].clientY;
     const deltaX = touchStartX.current - e.changedTouches[0].clientX;
 
-    // Vertical swipe up -> next chat
+    // Vertical swipe up -> next chat (advances to next 3 chats after the 3rd chat)
     if (deltaY > 60 && Math.abs(deltaY) > Math.abs(deltaX)) {
-      scrollToStory((activeStoryIdx + 1) % DISCOVER_STORIES.length);
+      scrollToStoryInBatch(activeInPageIdx + 1);
     }
-    // Vertical swipe down -> previous chat
+    // Vertical swipe down -> previous chat (or previous 3 chats)
     else if (deltaY < -60 && Math.abs(deltaY) > Math.abs(deltaX)) {
-      scrollToStory((activeStoryIdx - 1 + DISCOVER_STORIES.length) % DISCOVER_STORIES.length);
+      scrollToStoryInBatch(activeInPageIdx - 1);
     }
-    // Horizontal swipe left -> next chat
+    // Horizontal swipe left -> next chat / page
     else if (deltaX > 60 && Math.abs(deltaX) > Math.abs(deltaY)) {
-      scrollToStory((activeStoryIdx + 1) % DISCOVER_STORIES.length);
+      scrollToStoryInBatch(activeInPageIdx + 1);
     }
-    // Horizontal swipe right -> previous chat
+    // Horizontal swipe right -> previous chat / page
     else if (deltaX < -60 && Math.abs(deltaX) > Math.abs(deltaY)) {
-      scrollToStory((activeStoryIdx - 1 + DISCOVER_STORIES.length) % DISCOVER_STORIES.length);
+      scrollToStoryInBatch(activeInPageIdx - 1);
     }
   };
 
-  // Scroll spy to track currently visible story
+  // Scroll spy to track currently visible story within the 3-chat page
   const handleScroll = () => {
     if (!feedContainerRef.current) return;
     const containerTop = feedContainerRef.current.getBoundingClientRect().top;
-    let closestIndex = activeStoryIdx;
+    let closestIndex = activeInPageIdx;
     let closestDist = Infinity;
 
-    DISCOVER_STORIES.forEach((_, idx) => {
+    currentBatchStories.forEach((_, idx) => {
       const el = document.getElementById(`discover-story-${idx}`);
       if (el) {
         const rect = el.getBoundingClientRect();
@@ -535,10 +814,11 @@ function DiscoverPage({
       }
     });
 
-    if (closestIndex !== activeStoryIdx) {
-      setActiveStoryIdx(closestIndex);
+    if (closestIndex !== activeInPageIdx) {
+      setActiveInPageIdx(closestIndex);
     }
   };
+
 
   const ReactionBar = ({ msgKey, className = '' }: { msgKey: string; className?: string }) => {
     const r = reactions[msgKey] || { heart: 0, cap: 0, skull: 0, fire: 0, userReacted: null };
@@ -646,15 +926,63 @@ function DiscoverPage({
           onScroll={handleScroll}
           className="flex-1 px-4 sm:px-6 md:px-8 py-3 pb-24 md:pb-12 overflow-y-auto space-y-8 scroll-smooth"
         >
-          {DISCOVER_STORIES.map((story, storyIdx) => {
-            const isSaved = Boolean(savedStories[storyIdx]);
+          {filterPublisher && (
+            <div className="px-4 py-2.5 rounded-2xl bg-[#12121e] border border-[#232338] flex items-center justify-between text-xs shadow-md">
+              <div className="flex items-center gap-2 text-slate-300">
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                <span>Published chats by <strong className="text-white font-semibold">{filterPublisher}</strong></span>
+              </div>
+              {onClearFilter && (
+                <button
+                  onClick={onClearFilter}
+                  className="px-2.5 py-1 rounded-xl bg-[#1c1c2c] hover:bg-[#28283e] text-slate-400 hover:text-white transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5"
+                  title="Return to general feed"
+                >
+                  <span>All stories</span>
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {filterPublisher && !loadingBackend && allStories.length === 0 && (
+            <div className="p-8 sm:p-12 rounded-3xl bg-[#0f0f18] border border-[#1f1f2e] text-center space-y-3 shadow-xl my-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#171724] border border-[#232336] mx-auto flex items-center justify-center text-slate-400">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-white">No published stories yet</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                {filterPublisher} hasn't published any excerpts to the Discover feed yet.
+              </p>
+              {onClearFilter && (
+                <button
+                  onClick={onClearFilter}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Explore all stories
+                </button>
+              )}
+            </div>
+          )}
+
+          {loadingBackend && backendStories.length === 0 && (
+            <div className="py-6 flex items-center justify-center gap-2 text-xs text-slate-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+              <span>Loading freshest public chats...</span>
+            </div>
+          )}
+          {currentBatchStories.map((story, storyIdx) => {
+            const globalStoryIdx = startIndex + storyIdx;
+            const isSaved = Boolean(savedStories[globalStoryIdx]);
+            const isLastInBatch = storyIdx === currentBatchStories.length - 1;
+
             return (
               <div key={story.id} id={`discover-story-${storyIdx}`} className="space-y-4 scroll-mt-6">
-                <article className="rounded-2xl sm:rounded-3xl bg-[#0f0f18] border border-[#1f1f2e] p-4 sm:p-6 shadow-xl">
+                <article className="rounded-2xl sm:rounded-3xl bg-[#0f0f18] border border-[#1f1f2e] p-4 sm:p-6 shadow-md">
                   {/* Card Header */}
                   <div className="flex items-start justify-between pb-4 border-b border-[#181826]">
                     <div className="flex items-center gap-3">
-                      {story.authorAvatar ? (
+                      {story.authorAvatar && !story.authorsSummary?.startsWith('Anonymous') ? (
                         <img
                           src={story.authorAvatar}
                           alt={story.authorName}
@@ -674,15 +1002,39 @@ function DiscoverPage({
                           {story.title}
                         </h3>
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-                          <button
-                            type="button"
-                            onClick={() => onNavigate?.('Profile', story.authorHandle)}
-                            className="font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
-                          >
-                            {story.authorHandle}
-                          </button>
-                          <span>×</span>
-                          <span className="text-slate-400">Anonymous</span>
+                          {story.authorsSummary ? (
+                            <span className="flex items-center gap-1.5 font-semibold text-slate-300">
+                              {story.authorsSummary.includes('×') ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => onNavigate?.('Profile', story.authorHandle)}
+                                    className="font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
+                                  >
+                                    {story.authorsSummary.split('×')[0].trim()}
+                                  </button>
+                                  <span className="text-slate-500">×</span>
+                                  <span className="text-slate-400">Anonymous</span>
+                                </>
+                              ) : story.authorsSummary.includes('&') ? (
+                                <span className="font-semibold text-slate-300">{story.authorsSummary}</span>
+                              ) : (
+                                <span className="text-slate-400">Anonymous</span>
+                              )}
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onNavigate?.('Profile', story.authorHandle)}
+                                className="font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
+                              >
+                                {story.authorHandle}
+                              </button>
+                              <span>×</span>
+                              <span className="text-slate-400">Anonymous</span>
+                            </>
+                          )}
                           <span>•</span>
                           <span>{story.timeAgo}</span>
                           <span>•</span>
@@ -708,44 +1060,74 @@ function DiscoverPage({
 
                   {/* Reading Status */}
                   <div className="py-3 flex items-center justify-center gap-2 text-[11px] text-slate-500">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                     <span>{story.readingNow}</span>
                     <span>•</span>
                     <span>reactions set the mood</span>
                   </div>
 
-                  {/* Messages list */}
+                  {/* Messages list with Section dividers */}
                   <div className="space-y-4 py-2">
-                    {story.messages.map((m) => (
-                      <div
-                        key={m.id}
-                        className={`space-y-1.5 flex flex-col ${m.isRight ? 'items-end' : 'items-start'}`}
-                      >
-                        <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 px-0.5">
-                          <span>{m.sender}</span>
-                          {!m.isRight && <ShieldCheck className="w-3 h-3 text-blue-400" />}
-                        </div>
-
-                        <div className={`flex items-center gap-3 max-w-[75%] sm:max-w-[70%] ${m.isRight ? 'flex-row-reverse' : 'flex-row'}`}>
-                          {m.badge && (
-                            <span className={`text-xl select-none shrink-0 ${m.badgeAnim || ''}`}>
-                              {m.badge}
-                            </span>
-                          )}
-                          <div className={`w-fit max-w-full flex flex-col ${m.isRight ? 'items-end' : 'items-start'}`}>
-                            <div
-                              className={`rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-medium leading-relaxed ${
-                                m.isRight ? 'rounded-tr-sm' : 'rounded-tl-sm'
-                              } ${m.bubbleColor}`}
-                            >
-                              {m.text}
+                    {story.messages.map((m) => {
+                      const sectionStartingHere = story.sections?.find((s) => s.firstMessageId === m.id);
+                      return (
+                        <React.Fragment key={m.id}>
+                          {sectionStartingHere && (
+                            <div className="my-5 py-1.5 flex items-center gap-3 select-none">
+                              <div className="h-px bg-[#1f1f2e] flex-1"></div>
+                              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#12121c] border border-[#212130] text-[10px] shadow-xs">
+                                <Eye className="w-3.5 h-3.5 text-blue-400 stroke-[1.8]" />
+                                <span className="font-mono text-cyan-400 font-bold uppercase tracking-wider">
+                                  {sectionStartingHere.header}
+                                </span>
+                                <span className="text-slate-600">•</span>
+                                <span className="text-blue-400 font-semibold">{sectionStartingHere.topicTag}</span>
+                              </div>
+                              <div className="h-px bg-[#1f1f2e] flex-1"></div>
                             </div>
-                            <ReactionBar msgKey={m.id} className={m.isRight ? 'justify-end' : 'justify-start'} />
+                          )}
+                          <div
+                            className={`space-y-1.5 flex flex-col ${m.isRight ? 'items-end' : 'items-start'}`}
+                          >
+                            <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 px-0.5">
+                              <span>{m.isAnonymous ? 'Anonymous' : m.sender}</span>
+                              {!m.isRight && !m.isAnonymous && <ShieldCheck className="w-3 h-3 text-blue-400" />}
+                            </div>
+
+                            {(() => {
+                              const reactionData = reactions[m.id];
+                              const { bubbleClass, dominantEmoji } = getMessageBackgroundByReaction(
+                                reactionData,
+                                m.isRight
+                              );
+                              const badge = dominantEmoji || m.badge;
+
+                              return (
+                                <div className={`flex items-center gap-3 max-w-[75%] sm:max-w-[70%] ${m.isRight ? 'flex-row-reverse' : 'flex-row'}`}>
+                                  {badge && (
+                                    <span className={`text-xl select-none shrink-0 ${m.badgeAnim || 'transition-transform duration-200'}`}>
+                                      {badge}
+                                    </span>
+                                  )}
+                                  <div className={`w-fit max-w-full flex flex-col ${m.isRight ? 'items-end' : 'items-start'}`}>
+                                    <div
+                                      className={`rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-medium leading-relaxed transition-all duration-300 ${
+                                        m.isRight ? 'rounded-tr-sm' : 'rounded-tl-sm'
+                                      } ${bubbleClass}`}
+                                    >
+                                      {m.text}
+                                    </div>
+                                    <ReactionBar msgKey={m.id} className={m.isRight ? 'justify-end' : 'justify-start'} />
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
-                        </div>
-                      </div>
-                    ))}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
+
 
                   {/* Card Footer */}
                   <div className="mt-6 pt-4 border-t border-[#181826] flex items-center justify-between text-xs text-slate-500">
@@ -758,7 +1140,7 @@ function DiscoverPage({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleToggleSave(storyIdx, story.backendId)}
+                        onClick={() => handleToggleSave(globalStoryIdx, story.backendId)}
                         className={`p-2 rounded-lg transition-colors cursor-pointer ${
                           isSaved ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-[#181826]'
                         }`}
@@ -781,22 +1163,34 @@ function DiscoverPage({
                   </div>
                 </article>
 
-                {/* Interactive Up Next / Scroll to next chat Banner */}
+                {/* Interactive Up Next / TikTok 3-chat Batch progression */}
                 <div
-                  onClick={() => scrollToStory((storyIdx + 1) % DISCOVER_STORIES.length)}
-                  className="p-4 rounded-2xl bg-[#11111c] border border-[#1e1e2d] hover:border-blue-500/50 flex items-center justify-between cursor-pointer hover:bg-[#151524] transition-all group shadow-md active:scale-[0.99]"
-                  title="Scroll to next chat"
+                  onClick={() => scrollToStoryInBatch(storyIdx + 1)}
+                  className={`p-4 rounded-2xl flex items-center justify-between cursor-pointer transition-all group ${
+                    isLastInBatch
+                      ? 'bg-[#12131d] border border-[#21253a] hover:border-slate-600'
+                      : 'bg-[#10101a] border border-[#1d1d2c] hover:border-slate-700'
+                  }`}
+                  title={isLastInBatch ? 'Load next 3 chats' : 'Scroll to next chat'}
                 >
                   <div className="min-w-0 pr-2">
-                    <div className="text-[10px] font-bold tracking-widest text-slate-500 uppercase group-hover:text-blue-400 transition-colors">
-                      {story.upNext.label}
+                    <div className={`text-[10px] font-black tracking-widest uppercase transition-colors ${
+                      isLastInBatch ? 'text-blue-400' : 'text-slate-500 group-hover:text-blue-400'
+                    }`}>
+                      {isLastInBatch
+                        ? `NEXT 3 CHATS · PAGE ${((pageIndex + 1) % totalPages) + 1} OF ${totalPages}`
+                        : story.upNext?.label || `CHAT ${storyIdx + 2} OF 3`}
                     </div>
                     <div className="text-xs font-bold text-slate-200 group-hover:text-white mt-0.5 truncate">
-                      {story.upNext.title}
+                      {isLastInBatch
+                        ? allStories[((pageIndex + 1) % totalPages) * CHATS_PER_PAGE]?.title || 'Swipe up for next 3 chats'
+                        : currentBatchStories[storyIdx + 1]?.title || story.upNext?.title || 'Next chat'}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 group-hover:text-blue-400 shrink-0">
-                    <span>Scroll to next chat</span>
+                  <div className={`flex items-center gap-1.5 text-xs font-semibold shrink-0 ${
+                    isLastInBatch ? 'text-blue-400' : 'text-slate-400 group-hover:text-blue-400'
+                  }`}>
+                    <span>{isLastInBatch ? 'Swipe for next 3 chats' : 'Scroll to next chat'}</span>
                     <ArrowDown className="w-3.5 h-3.5 group-hover:translate-y-0.5 transition-transform" />
                   </div>
                 </div>
@@ -818,7 +1212,7 @@ function DiscoverPage({
               <button
                 type="button"
                 onClick={() => onNavigate && onNavigate('After Hours sponsor detail')}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/20 cursor-pointer transition-all"
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
               >
                 <span>Visit After Hours</span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
@@ -834,28 +1228,46 @@ function DiscoverPage({
           </div>
         </div>
 
-        {/* Floating Quick Navigation Pill */}
+        {/* Floating Quick Navigation Pill - Matte Dark, No Glowing */}
         <div className="absolute bottom-5 inset-x-0 z-20 flex items-center justify-center pointer-events-none">
-          <div className="pointer-events-auto flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#131926]/90 backdrop-blur-md border border-[#24354c] shadow-2xl text-xs font-semibold text-slate-200">
+          <div className="pointer-events-auto flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#11131c]/95 border border-[#212538] text-xs font-semibold text-slate-200">
             <button
               type="button"
-              onClick={() => scrollToStory((activeStoryIdx - 1 + DISCOVER_STORIES.length) % DISCOVER_STORIES.length)}
-              className="p-1 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+              onClick={() => scrollToStoryInBatch(activeInPageIdx - 1)}
+              className="p-1 hover:text-white rounded-full hover:bg-white/5 transition-colors cursor-pointer"
               title="Previous chat"
             >
               <ChevronUp className="w-4 h-4" />
             </button>
             <span className="text-[11px] text-slate-300 font-mono px-1">
-              Chat {activeStoryIdx + 1} of {DISCOVER_STORIES.length}
+              Chat {activeInPageIdx + 1} of {currentBatchStories.length} · Page {pageIndex + 1} of {totalPages}
             </span>
             <button
               type="button"
-              onClick={() => scrollToStory((activeStoryIdx + 1) % DISCOVER_STORIES.length)}
-              className="p-1 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
-              title="Next chat"
+              onClick={() => scrollToStoryInBatch(activeInPageIdx + 1)}
+              className="p-1 hover:text-white rounded-full hover:bg-white/5 transition-colors cursor-pointer"
+              title="Next chat / Next 3 chats"
             >
               <ChevronDown className="w-4 h-4" />
             </button>
+            {totalPages > 1 && (
+              <div className="pl-1.5 border-l border-[#262b40] flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPageIndex((p) => (p + 1) % totalPages);
+                    setActiveInPageIdx(0);
+                    setTimeout(() => {
+                      feedContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    }, 50);
+                  }}
+                  className="text-[10px] text-blue-400 hover:text-blue-300 font-bold px-1.5 py-0.5 rounded bg-[#171b28] hover:bg-[#1e2335] transition-colors cursor-pointer"
+                  title="Next 3 chats"
+                >
+                  Next 3 →
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -3387,17 +3799,97 @@ function NotificationsPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
   );
 }
 
+function formatRelativeTime(dateStr?: string): string {
+  if (!dateStr) return 'Recently';
+  try {
+    const diffSec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+    if (diffSec < 60) return 'Just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
+    return `${Math.floor(diffSec / 604800)}w ago`;
+  } catch {
+    return 'Recently';
+  }
+}
+
+function getMessageReactionBg(reactions?: { heart: number; cap: number; skull: number; fire: number }, isRight: boolean = false): string {
+  if (!reactions) {
+    return isRight
+      ? 'bg-[#421d33] border-[#5d2a49] text-rose-50'
+      : 'bg-[#152a48] border-[#1e3d68] text-slate-100';
+  }
+  const maxVal = Math.max(reactions.heart, reactions.cap, reactions.skull, reactions.fire);
+  if (maxVal <= 0) {
+    return isRight
+      ? 'bg-[#421d33] border-[#5d2a49] text-rose-50'
+      : 'bg-[#152a48] border-[#1e3d68] text-slate-100';
+  }
+  if (reactions.cap === maxVal) {
+    return 'bg-[#10243d] border-[#1b3d68] text-blue-100';
+  }
+  if (reactions.heart === maxVal) {
+    return 'bg-[#3b172a] border-[#632446] text-rose-100';
+  }
+  if (reactions.skull === maxVal) {
+    return 'bg-[#261533] border-[#4d2568] text-purple-100';
+  }
+  if (reactions.fire === maxVal) {
+    return 'bg-[#331c10] border-[#63351d] text-amber-100';
+  }
+  return isRight
+    ? 'bg-[#421d33] border-[#5d2a49] text-rose-50'
+    : 'bg-[#152a48] border-[#1e3d68] text-slate-100';
+}
+
 // ─────────────────────────────────────────────────────────────
 // VIEW 8: PROFILE PAGE (MATCHING FIGMA SCREENSHOT)
 // ─────────────────────────────────────────────────────────────
 interface ProfilePageProps {
   currentUser?: UserProfile | null;
   viewedHandle?: string | null;
-  onNavigate?: (nav: string, topicOrParam?: string) => void;
+  onNavigate?: (nav: string, topicOrParam?: string, extraParam?: any) => void;
   onLogout?: () => void;
   onOpenMenu?: () => void;
   onUpdateProfile?: (updated: Partial<UserProfile>) => void;
   onUpdateUser?: (updated: UserProfile) => void;
+}
+
+interface ProfilePublicationMessage {
+  id: number;
+  text: string;
+  senderDisplay: string;
+  senderHandle: string | null;
+  isAnonymous: boolean;
+  isFromProfileUser: boolean;
+  reactions: {
+    heart: number;
+    cap: number;
+    skull: number;
+    fire: number;
+    dominant?: string;
+    userReacted?: string | null;
+  };
+}
+
+interface ProfilePublication {
+  id: string;
+  excerptId?: number;
+  conversationId?: number;
+  title: string;
+  time: string;
+  tag: string;
+  reads: string;
+  saved: boolean;
+  authorsSummary: string;
+  messages: ProfilePublicationMessage[];
+  sections?: Array<{
+    id?: number;
+    header: string;
+    topicTag: string;
+    order?: number;
+    messages: ProfilePublicationMessage[];
+  }>;
 }
 
 function ProfilePage({
@@ -3431,59 +3923,103 @@ function ProfilePage({
   const [suggestedPeople, setSuggestedPeople] = useState<UserProfile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  interface ProfileCard {
-    id: string;
-    title: string;
-    time: string;
-    tag: string;
-    reads: string;
-    saved: boolean;
-    msg1: string;
-    msg2: string;
-    rx1: { heart: number; cap: string | number; skull: number; fire: number };
-    rx2: { heart: number; cap: string | number; skull: number; fire: number };
-  }
-
-  const mayaSeedCards: ProfileCard[] = [
+  const mayaSeedCards: ProfilePublication[] = [
     {
       id: 'p1',
+      excerptId: 3,
+      conversationId: 4,
       title: 'he brought a résumé to a first date.',
       time: '2h ago',
       tag: '#dating',
       reads: '18.4k reads',
       saved: false,
-      msg1: 'i brought a résumé to the date.',
-      msg2: 'please tell me this is a metaphor',
-      rx1: { heart: 124, cap: '1.2k', skull: 486, fire: 82 },
-      rx2: { heart: 842, cap: 41, skull: 495, fire: 91 },
+      authorsSummary: '@mayamaybe × Anonymous',
+      messages: [
+        {
+          id: 1,
+          text: 'i brought a résumé to the date.',
+          senderDisplay: 'Anonymous',
+          senderHandle: null,
+          isAnonymous: true,
+          isFromProfileUser: false,
+          reactions: { heart: 124, cap: 1200, skull: 486, fire: 82 },
+        },
+        {
+          id: 2,
+          text: 'please tell me this is a metaphor',
+          senderDisplay: 'Maya Chen',
+          senderHandle: '@mayamaybe',
+          isAnonymous: false,
+          isFromProfileUser: true,
+          reactions: { heart: 842, cap: 41, skull: 495, fire: 91 },
+        },
+      ],
     },
     {
       id: 'p2',
+      excerptId: 2,
+      conversationId: 3,
       title: 'the deck has 94 slides.',
       time: '3h ago',
       tag: '#workbesties',
       reads: '9.1k reads',
       saved: false,
-      msg1: 'the deck has 94 slides',
-      msg2: 'is the presentation a hostage situation',
-      rx1: { heart: 124, cap: '1.2k', skull: 486, fire: 82 },
-      rx2: { heart: 842, cap: 41, skull: 495, fire: 91 },
+      authorsSummary: '@mayamaybe & Leo Martinez',
+      messages: [
+        {
+          id: 3,
+          text: 'the deck has 94 slides',
+          senderDisplay: 'Leo Martinez',
+          senderHandle: '@leomartinez',
+          isAnonymous: false,
+          isFromProfileUser: false,
+          reactions: { heart: 124, cap: 1200, skull: 486, fire: 82 },
+        },
+        {
+          id: 4,
+          text: 'is the presentation a hostage situation',
+          senderDisplay: 'Maya Chen',
+          senderHandle: '@mayamaybe',
+          isAnonymous: false,
+          isFromProfileUser: true,
+          reactions: { heart: 842, cap: 41, skull: 495, fire: 91 },
+        },
+      ],
     },
     {
       id: 'p3',
+      excerptId: 1,
+      conversationId: 1,
       title: 'the rent is due. the raccoon is not on the lease.',
       time: '18m ago',
       tag: '#roommatelore',
       reads: '6.2k reads',
       saved: false,
-      msg1: 'who adopted a raccoon',
-      msg2: 'nobody adopted him. he chose us.',
-      rx1: { heart: 124, cap: '1.2k', skull: 486, fire: 82 },
-      rx2: { heart: 842, cap: 41, skull: 495, fire: 91 },
+      authorsSummary: '@mayamaybe × Anonymous',
+      messages: [
+        {
+          id: 5,
+          text: 'who adopted a raccoon',
+          senderDisplay: 'Anonymous',
+          senderHandle: null,
+          isAnonymous: true,
+          isFromProfileUser: false,
+          reactions: { heart: 124, cap: 1200, skull: 486, fire: 82 },
+        },
+        {
+          id: 6,
+          text: 'nobody adopted him. he chose us.',
+          senderDisplay: 'Maya Chen',
+          senderHandle: '@mayamaybe',
+          isAnonymous: false,
+          isFromProfileUser: true,
+          reactions: { heart: 842, cap: 41, skull: 495, fire: 91 },
+        },
+      ],
     },
   ];
 
-  const [cards, setCards] = useState<ProfileCard[]>([]);
+  const [cards, setCards] = useState<ProfilePublication[]>([]);
   const [loadingCards, setLoadingCards] = useState(false);
 
   const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : (n || 0).toString();
@@ -3533,43 +4069,73 @@ function ProfilePage({
   useEffect(() => {
     if (!displayedUser?.handle) return;
     const handle = displayedUser.handle;
-    if (isOwnProfile && handle === '@mayamaybe') {
-      setCards(mayaSeedCards);
-      return;
-    }
 
     setLoadingCards(true);
     cchatApi.getExcerpts({ publisher: handle })
       .then(excerpts => {
         if (excerpts && excerpts.length > 0) {
-          setCards(excerpts.map(e => ({
-            id: `p-${e.id}`,
-            title: e.title,
-            time: 'Recently',
-            tag: e.topic?.tag || '#chat',
-            reads: `${fmt(e.reads_count)} reads`,
-            saved: e.is_saved,
-            msg1: e.messages[0]?.text || '',
-            msg2: e.messages[1]?.text || '',
-            rx1: {
-              heart: e.messages[0]?.reactions?.heart || 0,
-              cap: String(e.messages[0]?.reactions?.cap || 0),
-              skull: e.messages[0]?.reactions?.skull || 0,
-              fire: e.messages[0]?.reactions?.fire || 0,
-            },
-            rx2: {
-              heart: e.messages[1]?.reactions?.heart || 0,
-              cap: String(e.messages[1]?.reactions?.cap || 0),
-              skull: e.messages[1]?.reactions?.skull || 0,
-              fire: e.messages[1]?.reactions?.fire || 0,
-            },
-          })));
+          const profileHandleClean = handle.replace(/^@/, '').toLowerCase();
+          setCards(excerpts.map(e => {
+            const mapMsg = (m: any): ProfilePublicationMessage => {
+              const isMine = !m.is_anonymous && (
+                (m.sender_handle && m.sender_handle.replace(/^@/, '').toLowerCase() === profileHandleClean) ||
+                (displayedUser?.display_name && m.sender_display === displayedUser.display_name)
+              );
+              return {
+                id: m.id,
+                text: m.text,
+                senderDisplay: m.is_anonymous ? 'Anonymous' : (m.sender_display || 'Anonymous'),
+                senderHandle: m.is_anonymous ? null : m.sender_handle,
+                isAnonymous: !!m.is_anonymous,
+                isFromProfileUser: isMine,
+                reactions: {
+                  heart: m.reactions?.heart || 0,
+                  cap: m.reactions?.cap || 0,
+                  skull: m.reactions?.skull || 0,
+                  fire: m.reactions?.fire || 0,
+                  dominant: m.reactions?.dominant || 'heart',
+                  userReacted: m.reactions?.user_reacted || null,
+                },
+              };
+            };
+
+            const mappedMessages = (e.messages || []).map(mapMsg);
+            const mappedSections = (e.sections || []).map(sec => ({
+              id: sec.id,
+              header: sec.header,
+              topicTag: sec.topic_tag,
+              order: sec.order,
+              messages: (sec.messages || []).map(mapMsg),
+            }));
+
+            const fallbackConvId = e.id === 1 ? 1 : e.id === 2 ? 3 : e.id === 3 ? 4 : e.id === 10 ? 5 : undefined;
+
+            return {
+              id: `p-${e.id}`,
+              excerptId: e.id,
+              conversationId: e.conversation_id || fallbackConvId,
+              title: e.title,
+              time: formatRelativeTime(e.created_at),
+              tag: e.topic?.tag || '#chat',
+              reads: `${fmt(e.reads_count)} reads`,
+              saved: e.is_saved,
+              authorsSummary: e.authors_summary || `${handle} × Anonymous`,
+              messages: mappedMessages,
+              sections: mappedSections.length > 0 ? mappedSections : undefined,
+            };
+          }));
+        } else if (isOwnProfile && handle === '@mayamaybe') {
+          setCards(mayaSeedCards);
         } else {
           setCards([]);
         }
       })
       .catch(() => {
-        setCards([]);
+        if (isOwnProfile && handle === '@mayamaybe') {
+          setCards(mayaSeedCards);
+        } else {
+          setCards([]);
+        }
       })
       .finally(() => {
         setLoadingCards(false);
@@ -3655,8 +4221,45 @@ function ProfilePage({
     }
   };
 
-  const toggleSave = (id: string) => {
+  const toggleSave = async (id: string) => {
     setCards(prev => prev.map(c => c.id === id ? { ...c, saved: !c.saved } : c));
+    const card = cards.find(c => c.id === id);
+    const numId = card?.excerptId || (id.startsWith('p-') ? parseInt(id.replace('p-', ''), 10) : parseInt(id.replace('p', ''), 10));
+    if (numId && !isNaN(numId)) {
+      try {
+        await cchatApi.toggleSaveExcerpt(numId);
+      } catch (err) {
+        console.warn('Failed to toggle save excerpt:', err);
+      }
+    }
+  };
+
+  const renderProfileMessage = (msg: ProfilePublicationMessage, defaultNameDisplay: string) => {
+    const isRight = msg.isFromProfileUser;
+    const senderName = isRight
+      ? defaultNameDisplay
+      : (msg.isAnonymous ? 'Anonymous' : msg.senderDisplay);
+
+    return (
+      <div key={msg.id} className={`space-y-1 flex flex-col ${isRight ? 'items-end' : 'items-start'}`}>
+        <div className={`text-[11px] text-slate-400 font-semibold ${isRight ? 'pr-1' : 'pl-1'}`}>
+          {senderName}
+        </div>
+        <div
+          className={`rounded-2xl ${
+            isRight ? 'rounded-tr-sm' : 'rounded-tl-sm'
+          } px-4 sm:px-5 py-3 sm:py-3.5 text-sm font-medium w-full sm:max-w-[75%] ${getMessageReactionBg(msg.reactions, isRight)}`}
+        >
+          {msg.text}
+        </div>
+        <div className={`flex items-center gap-2.5 sm:gap-3 text-[11px] text-slate-500 font-medium ${isRight ? 'pr-1' : 'pl-1'} pt-0.5`}>
+          <span className="flex items-center gap-1 hover:text-slate-300 transition-colors">♥ {msg.reactions.heart}</span>
+          <span className="flex items-center gap-1 text-blue-400 font-bold">🧢 {msg.reactions.cap}</span>
+          <span className="flex items-center gap-1 hover:text-slate-300 transition-colors">💀 {msg.reactions.skull}</span>
+          <span className="flex items-center gap-1 hover:text-slate-300 transition-colors">🔥 {msg.reactions.fire}</span>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -3963,92 +4566,118 @@ function ProfilePage({
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {cards.map(card => (
-                      <article key={card.id} className="rounded-3xl bg-[#0f0f18] border border-[#1f1f2e] p-6 shadow-xl space-y-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-2xl bg-[#181828] border border-[#25253a] flex items-center justify-center font-bold text-xs text-slate-300">
-                              {getInitials(nameDisplay, handleDisplay)}
-                            </div>
-                            <div>
-                              <h3 className="text-lg font-extrabold text-white tracking-tight">{card.title}</h3>
-                              <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-                                <span className="font-semibold text-slate-400">{handleDisplay}</span>
-                                <span>×</span>
-                                <span className="text-slate-400">Anonymous</span>
-                                <span>·</span>
-                                <span>{card.time}</span>
-                                <span>·</span>
-                                <span className="text-slate-400 font-medium">{card.tag}</span>
+                    {cards.map(card => {
+                      const displayMessages = card.sections && card.sections.length > 0
+                        ? card.sections.flatMap(s => s.messages)
+                        : card.messages;
+
+                      return (
+                        <article key={card.id} className="rounded-3xl bg-[#0f0f18] border border-[#1f1f2e] p-5 sm:p-6 shadow-xl space-y-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-2xl bg-[#181828] border border-[#25253a] flex items-center justify-center font-bold text-xs text-slate-300">
+                                {getInitials(nameDisplay, handleDisplay)}
+                              </div>
+                              <div>
+                                <h3
+                                  onClick={() => {
+                                    onNavigate?.('Discover', displayedUser?.handle || handleDisplay, card.excerptId);
+                                  }}
+                                  className="text-lg font-extrabold text-white tracking-tight hover:text-blue-400 cursor-pointer transition-colors"
+                                  title="Open dialogue in Discover feed"
+                                >
+                                  {card.title}
+                                </h3>
+                                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5 text-xs text-slate-500">
+                                  <span className="font-semibold text-slate-400">{card.authorsSummary}</span>
+                                  <span>·</span>
+                                  <span>{card.time}</span>
+                                  <span>·</span>
+                                  <span className="text-slate-400 font-medium">{card.tag}</span>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Messages */}
-                        <div className="space-y-4 py-1">
-                          {/* Msg 1 — Anonymous */}
-                          {card.msg1 && (
-                            <div className="space-y-1">
-                              <div className="text-[11px] text-slate-400 font-semibold">Anonymous</div>
-                              <div className="rounded-2xl rounded-tl-sm px-5 py-3.5 bg-[#172d4b] border border-[#214373] text-slate-100 text-sm font-medium w-full sm:w-[68%]">
-                                {card.msg1}
+                          {/* Compact Chat Preview (First 2 messages to save space) */}
+                          {(() => {
+                            const previewMessages = displayMessages.slice(0, 2);
+                            const remainingCount = Math.max(0, displayMessages.length - previewMessages.length);
+                            return (
+                              <div className="space-y-3 py-1">
+                                <div className="space-y-3">
+                                  {previewMessages.map(msg => renderProfileMessage(msg, nameDisplay))}
+                                </div>
+                                <button
+                                  onClick={() => onNavigate?.('Discover', displayedUser?.handle || handleDisplay, card.excerptId)}
+                                  className="w-full py-2 px-3.5 rounded-2xl bg-[#141424] hover:bg-[#1a1a2e] border border-[#232338] hover:border-blue-500/40 text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors flex items-center justify-between cursor-pointer group"
+                                >
+                                  <span className="flex items-center gap-1.5">
+                                    <Compass className="w-3.5 h-3.5" />
+                                    <span>
+                                      {remainingCount > 0
+                                        ? `+${remainingCount} more ${remainingCount === 1 ? 'message' : 'messages'} in full dialogue`
+                                        : 'View full dialogue on Discover'}
+                                    </span>
+                                  </span>
+                                  <span className="flex items-center gap-1 text-[11px] text-slate-400 group-hover:text-blue-300">
+                                    <span>Open in Discover</span>
+                                    <ArrowRight className="w-3 h-3" />
+                                  </span>
+                                </button>
                               </div>
-                              <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium pl-1 pt-0.5">
-                                <span className="flex items-center gap-1 hover:text-slate-300 cursor-pointer">♥ {card.rx1.heart}</span>
-                                <span className="flex items-center gap-1 text-blue-400 font-bold">🧢 {card.rx1.cap}</span>
-                                <span className="flex items-center gap-1 hover:text-slate-300 cursor-pointer">💀 {card.rx1.skull}</span>
-                                <span className="flex items-center gap-1 hover:text-slate-300 cursor-pointer">🔥 {card.rx1.fire}</span>
-                              </div>
+                            );
+                          })()}
+
+                          {/* Card Footer */}
+                          <div className="pt-3 border-t border-[#181826] flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                            <span>{card.reads} · Public excerpt · Read & react only</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => onNavigate?.('Discover', displayedUser?.handle || handleDisplay, card.excerptId)}
+                                className="px-3 py-1.5 rounded-xl bg-blue-600/15 border border-blue-500/30 hover:bg-blue-600/25 text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1.5"
+                                title="Open this story on Discover"
+                              >
+                                <Compass className="w-3.5 h-3.5" />
+                                <span>View in Discover</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                              {card.conversationId && isOwnProfile && (
+                                <button
+                                  onClick={() => onNavigate?.('My chats', String(card.conversationId))}
+                                  className="px-2.5 py-1.5 rounded-xl bg-[#141422] border border-[#242438] hover:bg-[#1a1a2c] text-xs font-semibold text-slate-300 transition-colors cursor-pointer flex items-center gap-1.5"
+                                  title="Open original private conversation in My chats"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span>Private chat</span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => toggleSave(card.id)}
+                                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                  card.saved ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-[#181826]'
+                                }`}
+                                title={card.saved ? 'Saved' : 'Save'}
+                              >
+                                <Bookmark className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (navigator.clipboard) {
+                                    navigator.clipboard.writeText(window.location.origin);
+                                    alert('Link copied to clipboard!');
+                                  }
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-[#181826] transition-colors cursor-pointer"
+                                title="Share"
+                              >
+                                <Share2 className="w-4 h-4" />
+                              </button>
                             </div>
-                          )}
-
-                          {/* Msg 2 */}
-                          {card.msg2 && (
-                            <div className="space-y-1 flex flex-col items-end">
-                              <div className="text-[11px] text-slate-400 font-semibold pr-1">{nameDisplay}</div>
-                              <div className="rounded-2xl rounded-tr-sm px-5 py-3.5 bg-[#421d33] border border-[#5d2a49] text-rose-50 text-sm font-medium w-full sm:w-[68%]">
-                                {card.msg2}
-                              </div>
-                              <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium pr-1 pt-0.5">
-                                <span className="flex items-center gap-1 text-rose-400 font-bold">♥ {card.rx2.heart}</span>
-                                <span className="flex items-center gap-1 hover:text-slate-300 cursor-pointer">🧢 {card.rx2.cap}</span>
-                                <span className="flex items-center gap-1 hover:text-slate-300 cursor-pointer">💀 {card.rx2.skull}</span>
-                                <span className="flex items-center gap-1 hover:text-slate-300 cursor-pointer">🔥 {card.rx2.fire}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Card Footer */}
-                        <div className="pt-3 border-t border-[#181826] flex items-center justify-between text-xs text-slate-500">
-                          <span>{card.reads} · Public excerpt · Read & react only</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => toggleSave(card.id)}
-                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                                card.saved ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-[#181826]'
-                              }`}
-                              title={card.saved ? 'Saved' : 'Save'}
-                            >
-                              <Bookmark className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (navigator.clipboard) {
-                                  navigator.clipboard.writeText(window.location.origin);
-                                  alert('Link copied to clipboard!');
-                                }
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-[#181826] transition-colors cursor-pointer"
-                              title="Share"
-                            >
-                              <Share2 className="w-4 h-4" />
-                            </button>
                           </div>
-                        </div>
-                      </article>
-                    ))}
+                        </article>
+                      );
+                    })}
                   </div>
                 )
               ) : (
@@ -4820,13 +5449,26 @@ function AccountSettingsPage({
 // ─────────────────────────────────────────────────────────────
 // VIEW 10: PUBLISHED CHATS PAGE (MATCHING FIGMA SCREENSHOT)
 // ─────────────────────────────────────────────────────────────
+interface PublicationItem {
+  id: string;
+  excerptId?: number;
+  conversationId?: number;
+  title: string;
+  chatName: string;
+  topic: string;
+  messagesCount: string;
+  reads: string;
+  publishedTime: string;
+  isLive: boolean;
+}
+
 function PublishedChatsPage({
   currentUser,
   onNavigate,
   onOpenMenu,
 }: {
   currentUser?: UserProfile | null;
-  onNavigate?: (nav: string) => void;
+  onNavigate?: (nav: string, handleOrTopic?: string, extraParam?: any) => void;
   onOpenMenu?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'All chats' | 'Published'>('Published');
@@ -4835,9 +5477,13 @@ function PublishedChatsPage({
   const [editingTopic, setEditingTopic] = useState('#workbesties');
   const [showConfirmRemove, setShowConfirmRemove] = useState(true);
 
-  const mayaSeedPubs = [
+  const fmt = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : (n || 0).toString());
+
+  const mayaSeedPubs: PublicationItem[] = [
     {
       id: 'p1',
+      excerptId: 2,
+      conversationId: 3,
       title: 'the deck has 94 slides.',
       chatName: 'Work bestie',
       topic: '#workbesties',
@@ -4848,6 +5494,8 @@ function PublishedChatsPage({
     },
     {
       id: 'p2',
+      excerptId: 3,
+      conversationId: 4,
       title: 'he brought a résumé to a first date.',
       chatName: 'The interview',
       topic: '#dating',
@@ -4858,6 +5506,8 @@ function PublishedChatsPage({
     },
     {
       id: 'p3',
+      excerptId: 1,
+      conversationId: 1,
       title: 'the rent is due. the raccoon is not on the lease.',
       chatName: 'The apartment',
       topic: '#roommatelore',
@@ -4868,39 +5518,63 @@ function PublishedChatsPage({
     },
   ];
 
-  const [publications, setPublications] = useState<typeof mayaSeedPubs>(() => {
+  const [publications, setPublications] = useState<PublicationItem[]>(() => {
     return (currentUser?.handle === '@mayamaybe') ? mayaSeedPubs : [];
   });
 
-  useEffect(() => {
-    if (!currentUser) return;
-    if (currentUser.handle === '@mayamaybe') {
-      setPublications(mayaSeedPubs);
-      return;
+  const handleViewInDiscover = (pub: PublicationItem) => {
+    if (onNavigate) {
+      onNavigate('Discover', currentUser?.handle || '@user', pub.excerptId);
     }
+  };
+
+  const handleViewFullChat = (pub: PublicationItem) => {
+    const convId = pub.conversationId || (pub.id === 'p1' ? 3 : pub.id === 'p2' ? 4 : pub.id === 'p3' ? 1 : null);
+    if (onNavigate) {
+      if (convId) {
+        onNavigate('My chats', String(convId));
+      } else {
+        onNavigate('My chats');
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!currentUser?.handle) return;
     cchatApi.getExcerpts({ publisher: currentUser.handle })
       .then(excerpts => {
         if (excerpts && excerpts.length > 0) {
-          setPublications(excerpts.map(e => ({
-            id: `p${e.id}`,
-            title: e.title,
-            chatName: 'Private chat',
-            topic: e.topic?.tag || '#chat',
-            messagesCount: `${e.messages?.length || 0} messages`,
-            reads: `${e.reads_count} reads`,
-            publishedTime: 'Recently',
-            isLive: true,
-          })));
+          setPublications(excerpts.map(e => {
+            const fallbackConvId = e.id === 1 ? 1 : e.id === 2 ? 3 : e.id === 3 ? 4 : e.id === 10 ? 5 : undefined;
+            return {
+              id: `p${e.id}`,
+              excerptId: e.id,
+              conversationId: e.conversation_id || fallbackConvId,
+              title: e.title,
+              chatName: e.title || 'Private chat',
+              topic: e.topic?.tag || '#chat',
+              messagesCount: `${e.messages?.length || 0} messages`,
+              reads: `${fmt(e.reads_count)} reads`,
+              publishedTime: formatRelativeTime(e.created_at),
+              isLive: true,
+            };
+          }));
+        } else if (currentUser.handle === '@mayamaybe') {
+          setPublications(mayaSeedPubs);
         } else {
           setPublications([]);
         }
       })
       .catch(() => {
-        setPublications([]);
+        if (currentUser.handle === '@mayamaybe') {
+          setPublications(mayaSeedPubs);
+        } else {
+          setPublications([]);
+        }
       });
   }, [currentUser]);
 
-  const handleSelectPub = (pub: typeof publications[0]) => {
+  const handleSelectPub = (pub: PublicationItem) => {
     setSelectedPublication(pub.id);
     setEditingTitle(pub.title);
     setEditingTopic(pub.topic);
@@ -5027,7 +5701,17 @@ function PublishedChatsPage({
                       />
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-base font-extrabold text-white tracking-tight">{pub.title}</h3>
+                          <h3
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewInDiscover(pub);
+                            }}
+                            className="text-base font-extrabold text-white tracking-tight hover:text-blue-400 transition-colors flex items-center gap-1.5 group cursor-pointer"
+                            title="Click to view full story on Discover"
+                          >
+                            <span>{pub.title}</span>
+                            <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400" />
+                          </h3>
                           <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Live
                           </span>
@@ -5049,14 +5733,37 @@ function PublishedChatsPage({
                     {currentUser?.handle || '@user'} × Anonymous · Only you published · Their name, handle and photo are hidden.
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#171724]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewInDiscover(pub);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-blue-600/15 border border-blue-500/30 hover:bg-blue-600/25 text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1.5"
+                        title="Open full dialogue on Discover"
+                      >
+                        <Compass className="w-3.5 h-3.5" />
+                        <span>View in Discover</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewFullChat(pub);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#141422] border border-[#242438] hover:bg-[#1a1a2c] text-xs font-semibold text-slate-300 transition-colors cursor-pointer flex items-center gap-1.5"
+                        title="Open full conversation in My chats"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Private chat</span>
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleSelectPub(pub);
                         }}
-                        className="px-4 py-2 rounded-xl bg-[#141422] border border-[#242438] hover:bg-[#1a1a2c] text-xs font-semibold text-white transition-colors cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl bg-[#141422] border border-[#242438] hover:bg-[#1a1a2c] text-xs font-semibold text-white transition-colors cursor-pointer"
                       >
                         Edit title & topic
                       </button>
@@ -5066,12 +5773,12 @@ function PublishedChatsPage({
                           handleSelectPub(pub);
                           setShowConfirmRemove(true);
                         }}
-                        className="px-4 py-2 rounded-xl bg-[#141422] border border-[#242438] hover:bg-rose-950/30 text-xs font-semibold text-slate-300 hover:text-rose-300 transition-colors cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl bg-[#141422] border border-[#242438] hover:bg-rose-950/30 text-xs font-semibold text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
                       >
                         Remove publication
                       </button>
                     </div>
-                    <span className="text-[11px] text-blue-400 font-medium">Private conversation retained</span>
+                    <span className="text-[11px] text-blue-400/80 font-medium">Private conversation retained</span>
                   </div>
                 </div>
               ))
@@ -6763,6 +7470,9 @@ export function App() {
   const [activeNav, setActiveNav] = useState<string>(initialRoute.nav);
   const [selectedTopic, setSelectedTopic] = useState<string>(initialRoute.topic || '#dating');
   const [selectedProfileHandle, setSelectedProfileHandle] = useState<string | null>(initialRoute.profileHandle || null);
+  const [selectedChatIdForMyChats, setSelectedChatIdForMyChats] = useState<number | null>(null);
+  const [discoverFilterPublisher, setDiscoverFilterPublisher] = useState<string | null>(null);
+  const [discoverTargetExcerptId, setDiscoverTargetExcerptId] = useState<number | null>(null);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('cchat_user');
@@ -6830,19 +7540,49 @@ export function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const handleNavigate = (nav: string, topicOrParam?: string) => {
+  const handleNavigate = (nav: string, topicOrParam?: string, extraParam?: any) => {
     let nextTopic = selectedTopic;
     let nextProfileHandle = selectedProfileHandle;
 
     if (nav === 'Topic detail') {
       nextTopic = topicOrParam || selectedTopic;
       setSelectedTopic(nextTopic);
+      setDiscoverFilterPublisher(null);
+      setDiscoverTargetExcerptId(null);
     } else if (nav === 'Profile') {
       nextProfileHandle = topicOrParam || null;
       setSelectedProfileHandle(nextProfileHandle);
+      setDiscoverFilterPublisher(null);
+      setDiscoverTargetExcerptId(null);
+    } else if (nav === 'My chats') {
+      if (topicOrParam) {
+        const parsed = parseInt(topicOrParam, 10);
+        setSelectedChatIdForMyChats(isNaN(parsed) ? null : parsed);
+      } else {
+        setSelectedChatIdForMyChats(null);
+      }
+      setSelectedProfileHandle(null);
+      nextProfileHandle = null;
+      setDiscoverFilterPublisher(null);
+      setDiscoverTargetExcerptId(null);
+    } else if (nav === 'Discover') {
+      if (topicOrParam) {
+        const cleanHandle = topicOrParam.startsWith('@') ? topicOrParam : `@${topicOrParam}`;
+        setDiscoverFilterPublisher(cleanHandle);
+        setDiscoverTargetExcerptId(extraParam ? Number(extraParam) : null);
+      } else {
+        setDiscoverFilterPublisher(null);
+        setDiscoverTargetExcerptId(null);
+      }
+      setSelectedProfileHandle(null);
+      nextProfileHandle = null;
+      setSelectedChatIdForMyChats(null);
     } else {
       setSelectedProfileHandle(null);
       nextProfileHandle = null;
+      setSelectedChatIdForMyChats(null);
+      setDiscoverFilterPublisher(null);
+      setDiscoverTargetExcerptId(null);
     }
 
     setActiveNav(nav);
@@ -6859,6 +7599,8 @@ export function App() {
   };
 
   const handleNavigateTab = (tab: string) => {
+    setDiscoverFilterPublisher(null);
+    setDiscoverTargetExcerptId(null);
     if (tab === 'Following') {
       handleNavigate('Following');
     } else if (tab === 'For you') {
@@ -6924,7 +7666,19 @@ export function App() {
 
   const renderContent = () => {
     if (activeNav === 'Discover') {
-      return <DiscoverPage onNavigateTab={handleNavigateTab} onNavigate={handleNavigate} onOpenMenu={handleOpenMenu} />;
+      return (
+        <DiscoverPage
+          onNavigateTab={handleNavigateTab}
+          onNavigate={handleNavigate}
+          onOpenMenu={handleOpenMenu}
+          filterPublisher={discoverFilterPublisher}
+          targetExcerptId={discoverTargetExcerptId}
+          onClearFilter={() => {
+            setDiscoverFilterPublisher(null);
+            setDiscoverTargetExcerptId(null);
+          }}
+        />
+      );
     }
     if (activeNav === 'Following') {
       return (
@@ -6946,6 +7700,7 @@ export function App() {
     if (activeNav === 'My chats') {
       return (
         <MyChatsPage
+          initialChatId={selectedChatIdForMyChats}
           onNavigate={handleNavigate}
           onOpenMenu={handleOpenMenu}
           onChatCountChange={(count) => setChatCount(count)}
@@ -7035,7 +7790,19 @@ export function App() {
     if (activeNav === 'Admin') {
       return <AdminDashboardPage onNavigate={handleNavigate} onOpenMenu={handleOpenMenu} />;
     }
-    return <DiscoverPage onNavigateTab={handleNavigateTab} onNavigate={handleNavigate} onOpenMenu={handleOpenMenu} />;
+    return (
+      <DiscoverPage
+        onNavigateTab={handleNavigateTab}
+        onNavigate={handleNavigate}
+        onOpenMenu={handleOpenMenu}
+        filterPublisher={discoverFilterPublisher}
+        targetExcerptId={discoverTargetExcerptId}
+        onClearFilter={() => {
+          setDiscoverFilterPublisher(null);
+          setDiscoverTargetExcerptId(null);
+        }}
+      />
+    );
   };
 
   // ── True Responsive Layout ───────────────────────────────────
@@ -7296,22 +8063,24 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
 
                 {/* Messages */}
                 <div className="space-y-3">
-                  {/* Msg 1 – Anon left, navy, cap badge */}
+                  {/* Msg 1 – Anon left */}
                   <div className="space-y-1 max-w-[72%]">
                     <div className="text-[11px] text-slate-500">Anonymous</div>
                     <div className="relative inline-block w-full">
-                      <div className="bg-[#1c2e47] border border-[#274268] text-white px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium">
+                      <div className={`${getMessageBackgroundByReaction(reactions.c1m1, false).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium transition-all duration-300`}>
                         we said one drink
                       </div>
-                      <div className="absolute -right-3 top-1/2 -translate-y-1/2 text-sm select-none">🧢</div>
+                      <div className="absolute -right-3 top-1/2 -translate-y-1/2 text-sm select-none">
+                        {getMessageBackgroundByReaction(reactions.c1m1, false).dominantEmoji || '🧢'}
+                      </div>
                     </div>
                     <ReactionBar rkey="c1m1" r={reactions.c1m1} />
                   </div>
 
-                  {/* Msg 2 – Jules right, wine */}
+                  {/* Msg 2 – Jules right */}
                   <div className="space-y-1 ml-auto max-w-[72%] flex flex-col items-end">
                     <div className="text-[11px] text-slate-500">Jules</div>
-                    <div className="bg-[#481c2d] border border-[#642840] text-white px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium">
+                    <div className={`${getMessageBackgroundByReaction(reactions.c1m2, true).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium transition-all duration-300`}>
                       this is still the same evening
                     </div>
                     <ReactionBar rkey="c1m2" r={reactions.c1m2} />
@@ -7320,40 +8089,48 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
                   {/* Msg 3 – Anon left */}
                   <div className="space-y-1 max-w-[72%]">
                     <div className="text-[11px] text-slate-500">Anonymous</div>
-                    <div className="bg-[#1c2e47] border border-[#274268] text-white px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium">
-                      it is Saturday
+                    <div className="relative inline-block w-full">
+                      <div className={`${getMessageBackgroundByReaction(reactions.c1m3, false).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium transition-all duration-300`}>
+                        it is Saturday
+                      </div>
+                      <div className="absolute -right-3 top-1/2 -translate-y-1/2 text-sm select-none">
+                        {getMessageBackgroundByReaction(reactions.c1m3, false).dominantEmoji || '💀'}
+                      </div>
                     </div>
-                    <div className="text-sm pl-1 pt-0.5 select-none">💀</div>
                     <ReactionBar rkey="c1m3" r={reactions.c1m3} />
                   </div>
 
                   {/* Msg 4 – Jules right */}
                   <div className="space-y-1 ml-auto max-w-[72%] flex flex-col items-end">
                     <div className="text-[11px] text-slate-500">Jules</div>
-                    <div className="bg-[#202230] border border-[#2d3044] text-white px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium">
+                    <div className={`${getMessageBackgroundByReaction(reactions.c1m4, true).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium transition-all duration-300`}>
                       a technicality
                     </div>
                     <ReactionBar rkey="c1m4" r={reactions.c1m4} />
                   </div>
 
-                  {/* Msg 5 – Anon left, amber, fire badge */}
+                  {/* Msg 5 – Anon left */}
                   <div className="space-y-1 max-w-[72%]">
                     <div className="text-[11px] text-slate-500">Anonymous</div>
                     <div className="relative inline-block w-full">
-                      <div className="bg-[#3f2717] border border-[#5a3821] text-white px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium">
+                      <div className={`${getMessageBackgroundByReaction(reactions.c1m5, false).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium transition-all duration-300`}>
                         why is there a karaoke receipt
                       </div>
-                      <div className="absolute -right-3 top-1/2 -translate-y-1/2 text-sm select-none">🔥</div>
+                      <div className="absolute -right-3 top-1/2 -translate-y-1/2 text-sm select-none">
+                        {getMessageBackgroundByReaction(reactions.c1m5, false).dominantEmoji || '🔥'}
+                      </div>
                     </div>
                     <ReactionBar rkey="c1m5" r={reactions.c1m5} />
                   </div>
 
-                  {/* Msg 6 – Jules right, wine, heart badge left */}
+                  {/* Msg 6 – Jules right */}
                   <div className="space-y-1 ml-auto max-w-[72%] flex flex-col items-end">
                     <div className="text-[11px] text-slate-500">Jules</div>
                     <div className="relative inline-block">
-                      <div className="absolute -left-6 top-1/2 -translate-y-1/2 text-sm select-none">🩷</div>
-                      <div className="bg-[#481c2d] border border-[#642840] text-white px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium">
+                      <div className="absolute -left-6 top-1/2 -translate-y-1/2 text-sm select-none">
+                        {getMessageBackgroundByReaction(reactions.c1m6, true).dominantEmoji || '❤️'}
+                      </div>
+                      <div className={`${getMessageBackgroundByReaction(reactions.c1m6, true).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium transition-all duration-300`}>
                         because we invested in the arts.
                       </div>
                     </div>
@@ -7403,16 +8180,16 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
                   {/* Msg 1 – Anon left */}
                   <div className="space-y-1 max-w-[72%]">
                     <div className="text-[11px] text-slate-500">Anonymous</div>
-                    <div className="bg-[#1c2e47] border border-[#274268] text-white px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium">
+                    <div className={`${getMessageBackgroundByReaction(reactions.c2m1, false).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium transition-all duration-300`}>
                       the deck has 94 slides
                     </div>
                     <ReactionBar rkey="c2m1" r={reactions.c2m1} />
                   </div>
 
-                  {/* Msg 2 – Maya right, slate */}
+                  {/* Msg 2 – Maya right */}
                   <div className="space-y-1 ml-auto max-w-[72%] flex flex-col items-end">
                     <div className="text-[11px] text-slate-500">Maya</div>
-                    <div className="bg-[#202230] border border-[#2d3044] text-white px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium">
+                    <div className={`${getMessageBackgroundByReaction(reactions.c2m2, true).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium transition-all duration-300`}>
                       is the presentation a hostage situation
                     </div>
                     <ReactionBar rkey="c2m2" r={reactions.c2m2} />
@@ -7458,19 +8235,19 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
 
                 {/* Messages */}
                 <div className="space-y-3">
-                  {/* Msg 1 – Anon left, navy */}
+                  {/* Msg 1 – Anon left */}
                   <div className="space-y-1 max-w-[72%]">
                     <div className="text-[11px] text-slate-500">Anonymous</div>
-                    <div className="bg-[#1c2e47] border border-[#274268] text-white px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium">
+                    <div className={`${getMessageBackgroundByReaction(reactions.c3m1, false).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tl-sm text-xs font-medium transition-all duration-300`}>
                       i brought a résumé to the date.
                     </div>
                     <ReactionBar rkey="c3m1" r={reactions.c3m1} />
                   </div>
 
-                  {/* Msg 2 – Maya right, wine */}
+                  {/* Msg 2 – Maya right */}
                   <div className="space-y-1 ml-auto max-w-[72%] flex flex-col items-end">
                     <div className="text-[11px] text-slate-500">Maya</div>
-                    <div className="bg-[#481c2d] border border-[#642840] text-white px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium">
+                    <div className={`${getMessageBackgroundByReaction(reactions.c3m2, true).bubbleClass} px-4 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium transition-all duration-300`}>
                       please tell me this is a metaphor
                     </div>
                     <ReactionBar rkey="c3m2" r={reactions.c3m2} />

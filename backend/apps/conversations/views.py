@@ -6,7 +6,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from .models import Conversation, Message
 from .serializers import ConversationSerializer, ConversationDetailSerializer, MessageSerializer
 from apps.accounts.models import UserProfile
-from apps.publications.models import PublicExcerpt, Topic
+from apps.publications.models import PublicExcerpt, Topic, ExcerptSection
 
 class ConversationViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
@@ -103,6 +103,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
         if reply_to_id:
             reply_to = conversation.messages.filter(id=reply_to_id).first()
 
+        active_excerpt = conversation.excerpts.filter(is_active=True).first()
+        is_eligible = active_excerpt is not None
+
         message = Message.objects.create(
             conversation=conversation,
             sender=current_profile,
@@ -111,11 +114,18 @@ class ConversationViewSet(viewsets.ModelViewSet):
             attachment_name=attachment_name,
             attachment_type=attachment_type,
             reply_to=reply_to,
-            is_excerpt_eligible=False  # New private messages stay private by default
+            is_excerpt_eligible=is_eligible
         )
+        if active_excerpt:
+            active_excerpt.messages.add(message)
+            last_section = active_excerpt.sections.order_by('order').last()
+            if last_section:
+                last_section.messages.add(message)
+
         conversation.save()  # update updated_at timestamp
 
         return Response(MessageSerializer(message, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
+
 
     @action(detail=True, methods=['patch', 'put'], url_path='messages/(?P<message_id>[0-9]+)')
     def edit_message(self, request, pk=None, message_id=None):
@@ -222,12 +232,24 @@ class ConversationViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You are not a participant in this conversation.")
 
         title = request.data.get('title', conversation.title).strip() or conversation.title
-        topic_tag = request.data.get('topic', '#roommatelore').strip()
+        topic_tag = request.data.get('topic', '#dating').strip()
+        if not topic_tag.startswith('#'):
+            topic_tag = f'#{topic_tag}'
 
         topic, created = Topic.objects.get_or_create(
             tag=topic_tag,
             defaults={'name': topic_tag.replace('#', '').replace('-', ' ').title(), 'chats_count': 1}
         )
+
+        partner = conversation.participants.exclude(id=current_profile.id).first()
+        if partner:
+            if partner.display_name and partner.display_name.lower() in title.lower():
+                if partner.display_name.lower() == title.strip().lower():
+                    title = f"{topic_tag} dialogue"
+                else:
+                    title = title.replace(partner.display_name, 'Anonymous')
+            if partner.handle and partner.handle.lower() in title.lower():
+                title = title.replace(partner.handle, '@anonymous')
 
         excerpt, is_new = PublicExcerpt.objects.get_or_create(
             conversation=conversation,
@@ -238,27 +260,78 @@ class ConversationViewSet(viewsets.ModelViewSet):
         excerpt.topic = topic
         excerpt.publishers.add(current_profile)
 
-        # Attach all eligible messages (no arbitrary cap)
-        if not excerpt.messages.exists():
-            eligible_msgs = conversation.messages.filter(is_excerpt_eligible=True)
-            if not eligible_msgs.exists():
-                eligible_msgs = conversation.messages.all()
-            excerpt.messages.set(eligible_msgs)
-
+        # Every message between them is public
+        conversation.messages.update(is_excerpt_eligible=True)
+        excerpt.messages.set(conversation.messages.all())
         excerpt.save()
+
+        # Handle message sections
+        sections_data = request.data.get('sections', [])
+        if sections_data and isinstance(sections_data, list):
+            excerpt.sections.all().delete()
+            all_msgs = list(conversation.messages.all())
+            for idx, s_info in enumerate(sections_data):
+                sec_header = (s_info.get('header') or f'Part {idx + 1}').strip()
+                if partner:
+                    if partner.display_name and partner.display_name.lower() in sec_header.lower():
+                        if partner.display_name.lower() == sec_header.strip().lower():
+                            sec_header = f"Part {idx + 1}"
+                        else:
+                            sec_header = sec_header.replace(partner.display_name, 'Anonymous')
+                    if partner.handle and partner.handle.lower() in sec_header.lower():
+                        sec_header = sec_header.replace(partner.handle, '@anonymous')
+
+                sec_tag = (s_info.get('topic_tag') or topic_tag).strip()
+                if not sec_tag.startswith('#'):
+                    sec_tag = f'#{sec_tag}'
+                sec = ExcerptSection.objects.create(
+                    excerpt=excerpt,
+                    header=sec_header,
+                    topic_tag=sec_tag,
+                    order=idx
+                )
+                msg_ids = s_info.get('message_ids', [])
+                if msg_ids:
+                    sec.messages.set(conversation.messages.filter(id__in=msg_ids))
+                elif idx == 0 and len(sections_data) == 1:
+                    sec.messages.set(all_msgs)
+        elif not excerpt.sections.exists():
+            default_header = title if not (partner and partner.display_name.lower() in title.lower()) else f"Part 1"
+            sec = ExcerptSection.objects.create(
+                excerpt=excerpt,
+                header=default_header,
+                topic_tag=topic_tag,
+                order=0
+            )
+            sec.messages.set(conversation.messages.all())
+
         conversation.tag = 'PUBLISHED'
         conversation.save()
 
-        # Increment topic chat count only on first publication of this conversation
         if is_new:
             topic.chats_count += 1
             topic.save(update_fields=['chats_count'])
+
+        sections_list = [
+            {
+                'id': s.id,
+                'header': s.header,
+                'topic_tag': s.topic_tag,
+                'order': s.order,
+                'message_ids': list(s.messages.values_list('id', flat=True))
+            }
+            for s in excerpt.sections.all()
+        ]
 
         return Response({
             'detail': 'Excerpt published',
             'excerpt_id': excerpt.id,
             'title': excerpt.title,
             'topic': excerpt.topic.tag,
+            'published_by_me': True,
+            'partner_is_anonymous': excerpt.publishers.count() < conversation.participants.count(),
+            'publishers_count': excerpt.publishers.count(),
+            'sections': sections_list,
         }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post', 'delete'])
@@ -269,8 +342,28 @@ class ConversationViewSet(viewsets.ModelViewSet):
         if not conversation.participants.filter(id=current_profile.id).exists():
             raise PermissionDenied("You are not a participant in this conversation.")
 
+        unpublish_all = request.data.get('unpublish_all', False)
         excerpts = conversation.excerpts.filter(is_active=True)
-        excerpts.update(is_active=False)
-        conversation.tag = 'PRIVATE'
-        conversation.save()
-        return Response({'detail': 'Publication removed'}, status=status.HTTP_200_OK)
+        if not excerpts.exists():
+            return Response({'detail': 'No active publication found'}, status=status.HTTP_200_OK)
+
+        excerpt = excerpts.first()
+        if unpublish_all or excerpt.publishers.count() <= 1 or not excerpt.publishers.filter(id=current_profile.id).exists():
+            excerpts.update(is_active=False)
+            conversation.tag = 'PRIVATE'
+            conversation.save()
+            return Response({'detail': 'Publication removed', 'is_published': False}, status=status.HTTP_200_OK)
+        else:
+            excerpt.publishers.remove(current_profile)
+            if excerpt.publishers.count() == 0:
+                excerpt.is_active = False
+                excerpt.save()
+                conversation.tag = 'PRIVATE'
+                conversation.save()
+                return Response({'detail': 'Publication removed', 'is_published': False}, status=status.HTTP_200_OK)
+            return Response({
+                'detail': 'Your consent removed. Partner remains published.',
+                'is_published': True,
+                'published_by_me': False,
+            }, status=status.HTTP_200_OK)
+

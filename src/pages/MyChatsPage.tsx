@@ -25,21 +25,68 @@ import {
   CheckCheck,
   Trash2,
   PanelRight,
+  Eye,
+  EyeOff,
+  Tag,
+  Layers,
+  Sparkles,
+  Split,
 } from 'lucide-react';
-import { cchatApi, ChatSummary, ChatDetail, ChatMessage } from '../services/api';
+import { cchatApi, ChatSummary, ChatDetail, ChatMessage, ChatSection } from '../services/api';
 import { EmojiPicker } from '../components/EmojiPicker';
 import { TelegramContextMenu } from '../components/TelegramContextMenu';
 
+
 interface MyChatsPageProps {
+  initialChatId?: number | null;
   onNavigate?: (nav: string, handleOrTopic?: string) => void;
   onOpenMenu?: () => void;
   onChatCountChange?: (count: number) => void;
 }
 
-export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyChatsPageProps) {
+function getQuickReactionBubbleBg(quickReactions?: Record<string, string[]>, isMyMsg: boolean = false): string | null {
+  if (!quickReactions) return null;
+  let topEmoji = '';
+  let maxCount = 0;
+  for (const [emoji, users] of Object.entries(quickReactions)) {
+    const count = Array.isArray(users) ? users.length : 0;
+    if (count > maxCount) {
+      maxCount = count;
+      topEmoji = emoji;
+    }
+  }
+  if (maxCount <= 0 || !topEmoji) return null;
+
+  if (['❤️', '🩷', '💖', '💕', 'heart'].includes(topEmoji)) {
+    return 'bg-gradient-to-br from-[#3b172a] via-[#2c1220] to-[#1e0c16] border border-[#6b2546] text-rose-50';
+  }
+  if (['🧢', '🥶', '👀', 'cap'].includes(topEmoji)) {
+    return 'bg-gradient-to-br from-[#142338] via-[#0f1b2b] to-[#0a121d] border border-[#234570] text-blue-50';
+  }
+  if (['💀', '😂', '😭', '☠️', 'skull'].includes(topEmoji)) {
+    return 'bg-gradient-to-br from-[#241530] via-[#1c1026] to-[#120a1a] border border-[#532470] text-purple-100';
+  }
+  if (['🔥', '🌶️', '💯', '⚡', 'fire'].includes(topEmoji)) {
+    return 'bg-gradient-to-br from-[#361e10] via-[#2a170c] to-[#1c1008] border border-[#6e3b18] text-amber-100';
+  }
+  if (['👍', '🎉', '✨', '👏'].includes(topEmoji)) {
+    return 'bg-gradient-to-br from-[#163328] via-[#10261e] to-[#0a1813] border border-[#245946] text-emerald-50';
+  }
+  return isMyMsg
+    ? 'bg-gradient-to-br from-[#25223b] via-[#1c192d] to-[#13111f] border border-[#433d6b] text-indigo-50'
+    : 'bg-gradient-to-br from-[#1d2334] via-[#161a28] to-[#0e111a] border border-[#323b57] text-slate-100';
+}
+
+export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCountChange }: MyChatsPageProps) {
   const [chats, setChats] = useState<ChatSummary[]>([]);
-  const [selectedChatId, setSelectedChatId] = useState<number | null>(null);
+  const [selectedChatId, setSelectedChatId] = useState<number | null>(initialChatId ?? null);
   const [currentChat, setCurrentChat] = useState<ChatDetail | null>(null);
+
+  useEffect(() => {
+    if (initialChatId != null) {
+      setSelectedChatId(initialChatId);
+    }
+  }, [initialChatId]);
   const [chatFilter, setChatFilter] = useState<'All chats' | 'Published'>('All chats');
   const [searchQuery, setSearchQuery] = useState('');
   const [typedMessage, setTypedMessage] = useState('');
@@ -71,6 +118,15 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
   const [pinnedMessage, setPinnedMessage] = useState<ChatMessage | null>(null);
   const [selectedMessageIds, setSelectedMessageIds] = useState<number[]>([]);
   const [showDetails, setShowDetails] = useState(false);
+
+  // Sectioning & Eye Publishing Modal states
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishTitle, setPublishTitle] = useState('');
+  const [publishTopic, setPublishTopic] = useState('#dating');
+  const [publishSections, setPublishSections] = useState<
+    Array<{ header: string; topic_tag: string; message_ids: number[] }>
+  >([]);
+
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -197,8 +253,12 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
       if (onChatCountChange) {
         onChatCountChange(data.length);
       }
-      if (selectFirst && data.length > 0 && selectedChatId === null) {
-        setSelectedChatId(data[0].id);
+      if (data.length > 0) {
+        if (initialChatId != null && data.some((c) => c.id === initialChatId)) {
+          setSelectedChatId(initialChatId);
+        } else if (selectFirst && selectedChatId === null) {
+          setSelectedChatId(data[0].id);
+        }
       }
     } catch (err: any) {
       showToast(err.message || 'Failed to load conversations');
@@ -504,44 +564,160 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
     }
   };
 
-  const handlePublishToggle = async () => {
+  const openPublishModal = () => {
+    if (!currentChat) return;
+    const topic = currentChat.active_excerpt?.topic || '#dating';
+    const partnerName = currentChat.title;
+    const existingTitle = currentChat.active_excerpt?.title;
+    const title = existingTitle && existingTitle.toLowerCase() !== partnerName.toLowerCase()
+      ? existingTitle
+      : `${topic} dialogue`;
+
+    setPublishTitle(title);
+    setPublishTopic(topic);
+
+    if (currentChat.active_excerpt?.sections && currentChat.active_excerpt.sections.length > 0) {
+      setPublishSections(
+        currentChat.active_excerpt.sections.map((s, idx) => ({
+          header: s.header && s.header.toLowerCase() === partnerName.toLowerCase() ? `Part ${idx + 1}` : s.header,
+          topic_tag: s.topic_tag,
+          message_ids: s.message_ids || [],
+        }))
+      );
+    } else {
+      // Default: 1 section containing all messages
+      const msgIds = currentChat.messages.map((m) => m.id);
+      setPublishSections([
+        {
+          header: 'Part 1',
+          topic_tag: topic,
+          message_ids: msgIds,
+        },
+      ]);
+    }
+    setShowPublishModal(true);
+  };
+
+  const handleSplitSectionAfter = (sectionIdx: number, msgIdxInSection: number) => {
+    const sec = publishSections[sectionIdx];
+    if (!sec || msgIdxInSection >= sec.message_ids.length - 1) return;
+
+    const firstHalfMsgs = sec.message_ids.slice(0, msgIdxInSection + 1);
+    const secondHalfMsgs = sec.message_ids.slice(msgIdxInSection + 1);
+
+    const newSections = [...publishSections];
+    newSections[sectionIdx] = {
+      ...sec,
+      message_ids: firstHalfMsgs,
+    };
+    newSections.splice(sectionIdx + 1, 0, {
+      header: `Part ${sectionIdx + 2}`,
+      topic_tag: sec.topic_tag,
+      message_ids: secondHalfMsgs,
+    });
+
+    setPublishSections(newSections);
+  };
+
+  const handleMergeSectionWithPrev = (sectionIdx: number) => {
+    if (sectionIdx <= 0 || sectionIdx >= publishSections.length) return;
+    const prevSec = publishSections[sectionIdx - 1];
+    const curSec = publishSections[sectionIdx];
+
+    const newSections = [...publishSections];
+    newSections[sectionIdx - 1] = {
+      ...prevSec,
+      message_ids: [...prevSec.message_ids, ...curSec.message_ids],
+    };
+    newSections.splice(sectionIdx, 1);
+    setPublishSections(newSections);
+  };
+
+  const handleSavePublication = async () => {
     if (!currentChat) return;
     setPublishing(true);
     try {
-      if (currentChat.is_published) {
-        await cchatApi.removePublication(currentChat.id);
-        setCurrentChat({
-          ...currentChat,
-          is_published: false,
-          tag: 'PRIVATE',
-          active_excerpt: null,
-        });
-        setChats(prev => prev.map(c => c.id === currentChat.id ? { ...c, is_published: false, tag: 'PRIVATE' } : c));
-        showToast('Publication removed. Conversation is now private.');
-      } else {
-        const topic = '#roommatelore';
-        const res = await cchatApi.publishExcerpt(currentChat.id, currentChat.title, topic);
-        setCurrentChat({
-          ...currentChat,
-          is_published: true,
-          tag: 'PUBLISHED',
-          active_excerpt: {
-            id: res.excerpt_id,
-            title: res.title,
-            topic: res.topic,
-            reads_count: 0,
-            messages_count: Math.min(6, currentChat.messages.length),
-          },
-        });
-        setChats(prev => prev.map(c => c.id === currentChat.id ? { ...c, is_published: true, tag: 'PUBLISHED' } : c));
-        showToast('Excerpt published successfully!');
-      }
+      const res = await cchatApi.publishExcerpt(
+        currentChat.id,
+        publishTitle.trim() || currentChat.title,
+        publishTopic.trim() || '#dating',
+        publishSections.length > 0 ? publishSections : undefined
+      );
+
+      setCurrentChat({
+        ...currentChat,
+        is_published: true,
+        tag: 'PUBLISHED',
+        published_by_me: true,
+        partner_is_anonymous: res.partner_is_anonymous !== false,
+        active_excerpt: {
+          id: res.excerpt_id,
+          title: res.title,
+          topic: res.topic,
+          reads_count: 0,
+          messages_count: currentChat.messages.length,
+          published_by_me: true,
+          publishers_count: res.publishers_count || 1,
+          sections: res.sections || publishSections,
+        },
+      });
+
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === currentChat.id
+            ? {
+                ...c,
+                is_published: true,
+                tag: 'PUBLISHED',
+                published_by_me: true,
+                partner_is_anonymous: res.partner_is_anonymous !== false,
+              }
+            : c
+        )
+      );
+
+      setShowPublishModal(false);
+      showToast('Chat published! Partner identity is Anonymous until they also click the eye icon.');
     } catch (err: any) {
-      showToast(err.message || 'Action failed');
+      showToast(err.message || 'Failed to publish chat');
     } finally {
       setPublishing(false);
     }
   };
+
+  const handleRemovePublication = async () => {
+    if (!currentChat) return;
+    setPublishing(true);
+    try {
+      await cchatApi.removePublication(currentChat.id, true);
+      setCurrentChat({
+        ...currentChat,
+        is_published: false,
+        tag: 'PRIVATE',
+        published_by_me: false,
+        partner_is_anonymous: false,
+        active_excerpt: null,
+      });
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === currentChat.id
+            ? { ...c, is_published: false, tag: 'PRIVATE', published_by_me: false }
+            : c
+        )
+      );
+      setShowPublishModal(false);
+      showToast('Publication removed. Conversation is now private.');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to remove publication');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handlePublishToggle = () => {
+    openPublishModal();
+  };
+
 
   const handleReportChat = async () => {
     if (!currentChat) return;
@@ -725,8 +901,28 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
                 </div>
               </div>
 
-              {/* Details toggle button */}
+              {/* Details and Eye toggle buttons */}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openPublishModal}
+                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${
+                    currentChat.is_published
+                      ? 'bg-blue-600/20 text-blue-400 border border-blue-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-[#151522] border border-transparent'
+                  }`}
+                  title={
+                    currentChat.is_published
+                      ? 'Chat is public to Discovery • Click to manage sections & headers'
+                      : 'Make chat public to Discovery'
+                  }
+                >
+                  <Eye className="w-4 h-4 stroke-[1.8]" />
+                  <span className="hidden sm:inline">
+                    {currentChat.is_published ? 'Public' : 'Make Public'}
+                  </span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setShowDetails((prev) => !prev)}
@@ -744,13 +940,33 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
             </header>
 
             {/* Published / Private Banner */}
-            <div className="px-6 py-2 bg-[#0c101d] border-b border-[#141e33] flex items-center shrink-0">
-              <span className="text-xs text-blue-400/90 font-medium">
-                {currentChat.is_published
-                  ? `${currentChat.active_excerpt?.messages_count || 6}-message excerpt published · new messages remain private`
-                  : 'Private · nothing from this conversation is public'}
+            <div className="px-6 py-2 bg-[#0c101d] border-b border-[#141e33] flex items-center justify-between shrink-0">
+              <span className="text-xs text-blue-400/90 font-medium flex items-center gap-2">
+                {currentChat.is_published ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-blue-400 stroke-[1.8]" />
+                    <span>
+                      Public chat in Discovery · All messages public ·{' '}
+                      {currentChat.partner_is_anonymous !== false
+                        ? 'Partner identity: Anonymous'
+                        : 'Both participants public'}
+                    </span>
+                  </>
+                ) : (
+                  'Private · nothing from this conversation is public'
+                )}
               </span>
+              {currentChat.is_published && (
+                <button
+                  type="button"
+                  onClick={openPublishModal}
+                  className="text-[11px] font-bold text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                >
+                  Edit sections
+                </button>
+              )}
             </div>
+
 
             {/* Messages Thread */}
             <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 space-y-4">
@@ -796,18 +1012,38 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
                   const isSelected = selectedMessageIds.includes(msg.id);
                   const isSelectionMode = selectedMessageIds.length > 0;
 
+                  // Check if this message starts a section
+                  const sectionStartingHere = currentChat.active_excerpt?.sections?.find(
+                    (s) => s.message_ids && s.message_ids.length > 0 && s.message_ids[0] === msg.id
+                  );
+
                   return (
-                    <div
-                      key={msg.id}
-                      onClick={() => {
-                        if (isSelectionMode) {
-                          toggleSelectMessage(msg.id);
-                        }
-                      }}
-                      className={`flex items-center gap-2.5 transition-all ${
-                        isMyMessage ? 'justify-end' : 'justify-start'
-                      } ${isSelectionMode ? 'cursor-pointer select-none' : ''}`}
-                    >
+                    <React.Fragment key={msg.id}>
+                      {sectionStartingHere && (
+                        <div className="my-5 py-2 flex items-center gap-3 select-none">
+                          <div className="h-px bg-[#1f1f2e] flex-1"></div>
+                          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#12121c] border border-[#212130] text-[11px] shadow-sm">
+                            <Eye className="w-3.5 h-3.5 text-blue-400 stroke-[1.8]" />
+                            <span className="font-mono text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
+                              {sectionStartingHere.header}
+                            </span>
+                            <span className="text-slate-600">•</span>
+                            <span className="text-blue-400 font-semibold">{sectionStartingHere.topic_tag}</span>
+                          </div>
+                          <div className="h-px bg-[#1f1f2e] flex-1"></div>
+                        </div>
+                      )}
+                      <div
+                        onClick={() => {
+                          if (isSelectionMode) {
+                            toggleSelectMessage(msg.id);
+                          }
+                        }}
+                        className={`flex items-center gap-2.5 transition-all ${
+                          isMyMessage ? 'justify-end' : 'justify-start'
+                        } ${isSelectionMode ? 'cursor-pointer select-none' : ''}`}
+                      >
+
                       {/* Checkbox indicator for other participant's message in selection mode */}
                       {isSelectionMode && !isMyMessage && (
                         <div
@@ -830,28 +1066,33 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
                           isMyMessage ? 'items-end' : 'items-start'
                         } max-w-[80%] sm:max-w-[70%]`}
                       >
-                        {/* Message Bubble with Telegram-style right-click context menu */}
-                        <div
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setContextMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              message: msg,
-                            });
-                          }}
-                          className={`w-fit max-w-full px-3.5 py-2 text-xs sm:text-sm font-medium leading-relaxed transition-all relative select-text break-words ${
-                            isCurrentlyEdited ? 'ring-2 ring-blue-500/80' : ''
-                          } ${
-                            isSelected
-                              ? 'ring-2 ring-blue-500 bg-[#1e2e47] text-blue-50 shadow-md shadow-blue-500/20'
-                              : isMyMessage
-                              ? 'bg-[#1e293b] border border-[#334155] text-slate-100 rounded-2xl rounded-tr-sm'
-                              : 'bg-[#141824] border border-[#232a3d] text-slate-200 rounded-2xl rounded-tl-sm'
-                          } ${isSelected ? (isMyMessage ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm') : ''}`}
-                          title="Right-click for options (Edit, Delete, Reply, React, Select...)"
-                        >
+                        {/* Message Bubble with dynamic reaction background and Telegram-style right-click context menu */}
+                        {(() => {
+                          const reactionBg = getQuickReactionBubbleBg(msg.quick_reactions, isMyMessage);
+                          return (
+                            <div
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setContextMenu({
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  message: msg,
+                                });
+                              }}
+                              className={`w-fit max-w-full px-3.5 py-2 text-xs sm:text-sm font-medium leading-relaxed transition-all duration-300 relative select-text break-words ${
+                                isCurrentlyEdited ? 'ring-2 ring-blue-500/80' : ''
+                              } ${
+                                isSelected
+                                  ? 'ring-2 ring-blue-500 bg-[#1e2e47] text-blue-50 shadow-md shadow-blue-500/20'
+                                  : reactionBg
+                                  ? reactionBg
+                                  : isMyMessage
+                                  ? 'bg-[#1e293b] border border-[#334155] text-slate-100'
+                                  : 'bg-[#141824] border border-[#232a3d] text-slate-200'
+                              } ${isMyMessage ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm'}`}
+                              title="Right-click for options (Edit, Delete, Reply, React, Select...)"
+                            >
                         {/* Reply Quote box if replied to another message */}
                         {msg.reply_to_text && (
                           <div className="mb-2 pl-2.5 py-1 border-l-2 border-blue-400 bg-white/5 rounded-r-lg text-[11px] leading-tight select-none max-w-full">
@@ -939,6 +1180,8 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
                           </div>
                         )}
                       </div>
+                    );
+                  })()}
 
                       {/* Telegram-style Quick Reactions underneath bubble */}
                       {msg.quick_reactions && Object.keys(msg.quick_reactions).length > 0 && (
@@ -979,8 +1222,10 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
                       </div>
                     )}
                   </div>
-                );
-              })
+                </React.Fragment>
+              );
+            })
+
             )}
           </div>
 
@@ -1094,6 +1339,258 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
                   </div>
                 </div>
               )}
+
+
+              {/* Publish / Sectioning Modal */}
+              {showPublishModal && currentChat && (
+                <div
+                  className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150"
+                  onClick={() => setShowPublishModal(false)}
+                >
+                  <div
+                    className="relative w-full max-w-2xl max-h-[90vh] bg-[#0c0c14] border border-[#1f1f2e] rounded-3xl shadow-2xl flex flex-col overflow-hidden text-slate-200"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Modal Header */}
+                    <div className="h-16 px-6 border-b border-[#1a1a28] flex items-center justify-between shrink-0 bg-[#0e0e18]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+                          <Eye className="w-4 h-4 stroke-[1.8]" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-white tracking-tight">Make Chat Public by Sections</h3>
+                          <p className="text-[11px] text-slate-400">Configure dialogue sections, headers, and # tags for recommendations</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowPublishModal(false)}
+                        className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                        title="Close"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Modal Content */}
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-xs">
+                      {/* Mutual Consent & Anonymity Callout */}
+                      <div className="p-4 rounded-2xl bg-[#12121f] border border-[#212136] space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 font-mono">
+                            MUTUAL CONSENT & ANONYMITY
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold font-mono">
+                            {currentChat.partner_is_anonymous !== false ? 'Partner Anonymous' : 'Both Public'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                          <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center gap-2.5">
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-white truncate">You</div>
+                              <div className="text-[10px] text-slate-400">Public · Your avatar & handle visible</div>
+                            </div>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center gap-2.5">
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-white truncate">{currentChat.title}</div>
+                              <div className="text-[10px] text-slate-400">
+                                {currentChat.partner_is_anonymous !== false
+                                  ? 'Anonymous · Name & avatar hidden until they click 👁️'
+                                  : 'Public · Partner has consented'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          All messages between you will be publicly discoverable. The other person stays 100% anonymous until they also enable public mode.
+                        </p>
+                      </div>
+
+                      {/* Main Title & Main Tag */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Overall Chat Header</label>
+                          <input
+                            type="text"
+                            value={publishTitle}
+                            onChange={(e) => setPublishTitle(e.target.value)}
+                            placeholder="e.g. He brought a résumé to a first date"
+                            className="w-full bg-[#12121c] border border-[#212130] focus:border-blue-500 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-300">Default # Tag</label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={publishTopic}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setPublishTopic(v.startsWith('#') ? v : `#${v}`);
+                              }}
+                              placeholder="#dating"
+                              className="w-full bg-[#12121c] border border-[#212130] focus:border-blue-500 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sections List */}
+                      <div className="space-y-3 pt-1">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-cyan-400" />
+                            <span className="font-bold text-xs text-white">Message Sections ({publishSections.length})</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            Split dialogue into sections for recommendation feeds
+                          </span>
+                        </div>
+
+                        {publishSections.map((sec, secIdx) => {
+                          const secMsgs = currentChat.messages.filter((m) =>
+                            sec.message_ids.includes(m.id)
+                          );
+
+                          return (
+                            <div
+                              key={secIdx}
+                              className="p-4 rounded-2xl bg-[#0f0f18] border border-[#1f1f2e] space-y-3"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
+                                    SECTION {secIdx + 1}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500">
+                                    ({sec.message_ids.length} messages)
+                                  </span>
+                                </div>
+                                {secIdx > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMergeSectionWithPrev(secIdx)}
+                                    className="text-[10px] font-semibold text-slate-400 hover:text-white underline cursor-pointer"
+                                  >
+                                    Merge with Section {secIdx}
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-semibold text-slate-400">Section Header</label>
+                                  <input
+                                    type="text"
+                                    value={sec.header}
+                                    onChange={(e) => {
+                                      const updated = [...publishSections];
+                                      updated[secIdx].header = e.target.value;
+                                      setPublishSections(updated);
+                                    }}
+                                    placeholder={`Section ${secIdx + 1} Header`}
+                                    className="w-full bg-[#141422] border border-[#232338] focus:border-blue-500 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-semibold text-slate-400">Section # Tag</label>
+                                  <input
+                                    type="text"
+                                    value={sec.topic_tag}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const updated = [...publishSections];
+                                      updated[secIdx].topic_tag = v.startsWith('#') ? v : `#${v}`;
+                                      setPublishSections(updated);
+                                    }}
+                                    placeholder="#topic"
+                                    className="w-full bg-[#141422] border border-[#232338] focus:border-blue-500 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Messages in this section preview */}
+                              <div className="space-y-1.5 pt-1 max-h-48 overflow-y-auto pr-1">
+                                {secMsgs.length === 0 ? (
+                                  <div className="text-[11px] text-slate-500 italic py-2">
+                                    No messages assigned to this section yet.
+                                  </div>
+                                ) : (
+                                  secMsgs.map((m, mIdx) => (
+                                    <div
+                                      key={m.id}
+                                      className="p-2 rounded-xl bg-black/25 border border-white/5 flex items-center justify-between text-[11px] gap-2"
+                                    >
+                                      <div className="min-w-0 flex items-center gap-2">
+                                        <span className="font-semibold text-slate-300 truncate shrink-0">
+                                          {m.is_self ? 'You' : m.sender_name}:
+                                        </span>
+                                        <span className="text-slate-400 truncate">
+                                          {m.text || m.attachment_name || 'Attachment'}
+                                        </span>
+                                      </div>
+
+                                      {/* Split after this message button */}
+                                      {mIdx < secMsgs.length - 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSplitSectionAfter(secIdx, mIdx)}
+                                          className="text-[10px] font-bold text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 shrink-0 transition-colors cursor-pointer"
+                                          title="Split section after this message"
+                                        >
+                                          + Split section here
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="h-16 px-6 border-t border-[#1a1a28] flex items-center justify-between shrink-0 bg-[#0e0e18]">
+                      {currentChat.is_published ? (
+                        <button
+                          type="button"
+                          onClick={handleRemovePublication}
+                          disabled={publishing}
+                          className="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          {publishing ? 'Removing...' : 'Make Private'}
+                        </button>
+                      ) : (
+                        <div></div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowPublishModal(false)}
+                          className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSavePublication}
+                          disabled={publishing}
+                          className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-md shadow-blue-500/20"
+                        >
+                          {publishing ? 'Saving...' : currentChat.is_published ? 'Update Publication' : 'Make Public'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
 
               {/* Editing Banner */}
               {editingMessage && (
@@ -1309,19 +1806,34 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
 
               {/* Public excerpt card */}
               <div className="p-4 rounded-2xl bg-[#0f0f18] border border-[#1f1f2e] space-y-3 shadow-lg">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Public excerpt
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                    Public Excerpt
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold font-mono">
+                    {currentChat.active_excerpt?.sections?.length || 1} {currentChat.active_excerpt?.sections?.length === 1 ? 'section' : 'sections'}
+                  </span>
                 </div>
                 <h4 className="text-xs font-bold text-white leading-snug">
                   {currentChat.active_excerpt?.title || currentChat.title}
                 </h4>
-                <div className="text-[10px] text-slate-500">
-                  {currentChat.active_excerpt?.topic || '#roommatelore'} · {currentChat.active_excerpt?.reads_count || 0} reads
+                <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                  <span className="text-blue-400 font-semibold">{currentChat.active_excerpt?.topic || '#dating'}</span>
+                  <span>·</span>
+                  <span>{currentChat.active_excerpt?.reads_count || 0} reads</span>
+                  <span>·</span>
+                  <span>{currentChat.partner_is_anonymous !== false ? 'Partner: Anonymous' : 'Both: Public'}</span>
                 </div>
 
                 <div className="space-y-2 pt-1">
                   <button
-                    onClick={handlePublishToggle}
+                    onClick={openPublishModal}
+                    className="w-full py-2 px-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-xs font-bold text-blue-400 border border-blue-500/30 transition-colors cursor-pointer text-center"
+                  >
+                    Edit sections & headers
+                  </button>
+                  <button
+                    onClick={handleRemovePublication}
                     disabled={publishing}
                     className="w-full py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-xs font-bold text-rose-300 border border-rose-500/30 transition-colors cursor-pointer text-center"
                   >
@@ -1339,25 +1851,27 @@ export function MyChatsPage({ onNavigate, onOpenMenu, onChatCountChange }: MyCha
 
               <div className="p-4 rounded-2xl bg-[#0f0f18] border border-[#1f1f2e] space-y-3 shadow-lg">
                 <div className="flex items-center gap-2 text-xs font-bold text-white">
-                  <ShieldCheck className="w-4 h-4 text-blue-400" />
-                  <span>Ready to publish an excerpt?</span>
+                  <Eye className="w-4 h-4 text-blue-400 stroke-[1.8]" />
+                  <span>Ready to publish with sections?</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Turn the best moments into a public plot thread. Identity is preserved according to each participant's settings.
+                  Click the eye icon to make your dialogue public. You will be visible, while your partner stays anonymous until they also consent.
                 </p>
 
                 {currentChat && (
                   <button
-                    onClick={handlePublishToggle}
+                    onClick={openPublishModal}
                     disabled={publishing}
-                    className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition-colors cursor-pointer text-center shadow-md shadow-blue-500/20"
+                    className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition-colors cursor-pointer text-center shadow-md shadow-blue-500/20 flex items-center justify-center gap-2"
                   >
-                    {publishing ? 'Publishing...' : 'Publish excerpt to Discover'}
+                    <Eye className="w-4 h-4 stroke-[1.8]" />
+                    <span>Configure & Publish Chat</span>
                   </button>
                 )}
               </div>
             </>
           )}
+
 
           {/* Conversation options */}
           <div className="p-4 rounded-2xl bg-[#0f0f18] border border-[#1f1f2e] space-y-2.5 shadow-lg">

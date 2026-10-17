@@ -17,6 +17,15 @@ export interface UserProfile {
   is_following?: boolean;
 }
 
+export interface ChatSection {
+  id?: number;
+  header: string;
+  topic_tag: string;
+  order?: number;
+  message_ids?: number[];
+  messages?: ExcerptMessage[];
+}
+
 export interface ChatSummary {
   id: number;
   title: string;
@@ -24,6 +33,8 @@ export interface ChatSummary {
   tag: string;
   preview: string;
   is_published: boolean;
+  published_by_me?: boolean;
+  partner_is_anonymous?: boolean;
   participants_summary: string;
   updated_at: string;
 }
@@ -59,8 +70,12 @@ export interface ChatDetail extends ChatSummary {
     topic: string;
     reads_count: number;
     messages_count: number;
+    published_by_me?: boolean;
+    publishers_count?: number;
+    sections?: ChatSection[];
   } | null;
 }
+
 
 export interface ExcerptMessage {
   id: number;
@@ -93,8 +108,12 @@ export interface PublicExcerptItem {
   authors_summary: string;
   is_saved: boolean;
   messages: ExcerptMessage[];
+  sections?: ChatSection[];
   created_at: string;
+  conversation_id?: number;
+  fyp_score?: number;
 }
+
 
 export interface TopicItem {
   id: number;
@@ -377,22 +396,29 @@ export const cchatApi = {
     return res.json();
   },
 
-  async publishExcerpt(chatId: number | string, title: string, topic: string) {
+  async publishExcerpt(
+    chatId: number | string,
+    title: string,
+    topic: string,
+    sections?: Array<{ header: string; topic_tag: string; message_ids?: number[] }>
+  ) {
     const res = await apiFetch(`/chats/${chatId}/publish/`, {
       method: 'POST',
-      body: JSON.stringify({ title, topic }),
+      body: JSON.stringify({ title, topic, sections }),
     });
     if (!res.ok) throw new Error('Failed to publish excerpt');
     return res.json();
   },
 
-  async removePublication(chatId: number | string) {
+  async removePublication(chatId: number | string, unpublishAll: boolean = false) {
     const res = await apiFetch(`/chats/${chatId}/remove_publication/`, {
       method: 'POST',
+      body: JSON.stringify({ unpublish_all: unpublishAll }),
     });
     if (!res.ok) throw new Error('Failed to remove publication');
     return res.json();
   },
+
 
   // Excerpts & Feed
   async getExcerpts(params?: { tab?: string; topic?: string; publisher?: string }): Promise<PublicExcerptItem[]> {

@@ -55,14 +55,37 @@ class ConversationSerializer(serializers.ModelSerializer):
     participants = UserProfileSerializer(many=True, read_only=True)
     preview = serializers.CharField(read_only=True)
     is_published = serializers.SerializerMethodField()
+    published_by_me = serializers.SerializerMethodField()
+    partner_is_anonymous = serializers.SerializerMethodField()
     participants_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
-        fields = ['id', 'title', 'initials', 'participants', 'participants_summary', 'tag', 'preview', 'is_published', 'created_at', 'updated_at']
+        fields = ['id', 'title', 'initials', 'participants', 'participants_summary', 'tag', 'preview', 'is_published', 'published_by_me', 'partner_is_anonymous', 'created_at', 'updated_at']
 
     def get_is_published(self, obj):
         return obj.excerpts.filter(is_active=True).exists()
+
+    def get_published_by_me(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        excerpt = obj.excerpts.filter(is_active=True).first()
+        if not excerpt:
+            return False
+        try:
+            return excerpt.publishers.filter(id=request.user.profile.id).exists()
+        except Exception:
+            return False
+
+    def get_partner_is_anonymous(self, obj):
+        excerpt = obj.excerpts.filter(is_active=True).first()
+        if not excerpt:
+            return False
+        participants = obj.participants.all()
+        publishers = excerpt.publishers.all()
+        # If any participant is not in publishers, their identity is anonymous
+        return len(publishers) < len(participants)
 
     def get_participants_summary(self, obj):
         names = [p.display_name for p in obj.participants.all()]
@@ -82,10 +105,32 @@ class ConversationDetailSerializer(ConversationSerializer):
         excerpt = obj.excerpts.filter(is_active=True).first()
         if not excerpt:
             return None
+        request = self.context.get('request')
+        published_by_me = False
+        if request and request.user and request.user.is_authenticated:
+            try:
+                published_by_me = excerpt.publishers.filter(id=request.user.profile.id).exists()
+            except Exception:
+                pass
+
+        sections_data = []
+        for s in excerpt.sections.all():
+            sections_data.append({
+                'id': s.id,
+                'header': s.header,
+                'topic_tag': s.topic_tag,
+                'order': s.order,
+                'message_ids': list(s.messages.values_list('id', flat=True)),
+            })
+
         return {
             'id': excerpt.id,
             'title': excerpt.title,
             'topic': excerpt.topic.tag if excerpt.topic else '#roommatelore',
             'reads_count': excerpt.reads_count,
             'messages_count': excerpt.messages.count(),
+            'published_by_me': published_by_me,
+            'publishers_count': excerpt.publishers.count(),
+            'sections': sections_data,
         }
+

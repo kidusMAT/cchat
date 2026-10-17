@@ -1,3 +1,6 @@
+from django.db.models import Count, F, Case, When, Value, IntegerField, Q
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework import viewsets, views, status, permissions
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
@@ -6,6 +9,7 @@ from .models import Topic, PublicExcerpt, MessageReaction, SavedExcerpt
 from .serializers import TopicSerializer, PublicExcerptSerializer, SavedExcerptSerializer
 from apps.accounts.models import UserProfile
 from apps.conversations.models import Message
+
 
 class TopicViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Topic.objects.all().order_by('-chats_count')
@@ -38,6 +42,7 @@ class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
         if publisher:
             handle = publisher if publisher.startswith('@') else f"@{publisher}"
             qs = qs.filter(publishers__handle__iexact=handle)
+            return qs.order_by('-created_at')
 
         if topic_tag:
             qs = qs.filter(topic__tag=topic_tag)
@@ -54,6 +59,59 @@ class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
                     qs = qs.none()
             else:
                 qs = qs.none()
+        else:
+            # FYP (For You Page) Ranking Algorithm:
+            # Score = reads + (reactions * 3) + (saves * 8) + recency_boost + topic_affinity_boost
+            now = timezone.now()
+
+            # Base engagement annotations (distinct avoids cartesian duplicate counting)
+            qs = qs.annotate(
+                rx_count=Count('messages__reactions', distinct=True),
+                sv_count=Count('saved_by', distinct=True),
+            )
+
+            # Recency / Freshness boost
+            fresh_boost = Case(
+                When(created_at__gte=now - timedelta(hours=3), then=Value(6000)),
+                When(created_at__gte=now - timedelta(hours=24), then=Value(2500)),
+                When(created_at__gte=now - timedelta(days=3), then=Value(800)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+
+            # Personalization / Topic affinity boost
+            preferred_tags = set()
+            user = self.request.user
+            if user and user.is_authenticated:
+                try:
+                    profile = user.profile
+                    saved_tags = SavedExcerpt.objects.filter(user=profile).values_list('excerpt__topic__tag', flat=True)
+                    saved_sec_tags = SavedExcerpt.objects.filter(user=profile).values_list('excerpt__sections__topic_tag', flat=True)
+                    reacted_tags = MessageReaction.objects.filter(user=profile).values_list('message__included_in_excerpts__topic__tag', flat=True)
+                    for t in list(saved_tags) + list(saved_sec_tags) + list(reacted_tags):
+                        if t:
+                            preferred_tags.add(t)
+                except Exception:
+                    pass
+
+            if preferred_tags:
+                affinity_boost = Case(
+                    When(Q(topic__tag__in=preferred_tags) | Q(sections__topic_tag__in=preferred_tags), then=Value(4000)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            else:
+                affinity_boost = Value(0, output_field=IntegerField())
+
+            qs = qs.annotate(
+                fyp_score=(
+                    F('reads_count') +
+                    (F('rx_count') * 3) +
+                    (F('sv_count') * 8) +
+                    fresh_boost +
+                    affinity_boost
+                )
+            ).order_by('-fyp_score', '-created_at').distinct()
 
         return qs
 

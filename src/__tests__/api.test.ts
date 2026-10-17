@@ -145,4 +145,60 @@ describe('cchatApi service contract', () => {
     expect(url).toBe('/api/chats/1/send_message/');
     expect(res.text).toBe('New message');
   });
+
+  it('publishes chat excerpt with sections and headers', async () => {
+    authStorage.setToken('valid-token');
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        detail: 'Excerpt published',
+        excerpt_id: 42,
+        title: 'Interview Lore',
+        topic: '#dating',
+        sections: [
+          { header: 'The Resume', topic_tag: '#career', message_ids: [1, 2] },
+          { header: 'The Offer', topic_tag: '#dating', message_ids: [3, 4] },
+        ],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    const sections = [
+      { header: 'The Resume', topic_tag: '#career', message_ids: [1, 2] },
+      { header: 'The Offer', topic_tag: '#dating', message_ids: [3, 4] },
+    ];
+
+    const res = await cchatApi.publishExcerpt(10, 'Interview Lore', '#dating', sections);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/chats/10/publish/');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      title: 'Interview Lore',
+      topic: '#dating',
+      sections,
+    });
+    expect(res.excerpt_id).toBe(42);
+    expect(res.sections.length).toBe(2);
+  });
+
+  it('removes publication from chat', async () => {
+    authStorage.setToken('valid-token');
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ detail: 'Publication removed' }),
+    });
+    global.fetch = mockFetch;
+
+    const res = await cchatApi.removePublication(10, true);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/chats/10/remove_publication/');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({ unpublish_all: true });
+    expect(res.detail).toBe('Publication removed');
+  });
 });
+

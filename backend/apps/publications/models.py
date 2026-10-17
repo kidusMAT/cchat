@@ -61,3 +61,19 @@ class SavedExcerpt(models.Model):
 
     def __str__(self):
         return f"{self.user.handle} saved {self.excerpt.title}"
+
+
+class ExcerptSection(models.Model):
+    excerpt = models.ForeignKey(PublicExcerpt, on_delete=models.CASCADE, related_name='sections')
+    header = models.CharField(max_length=255, default='Part 1')
+    topic_tag = models.CharField(max_length=50, default='#dating')
+    order = models.PositiveIntegerField(default=0)
+    messages = models.ManyToManyField(Message, related_name='excerpt_sections', blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'created_at']
+
+    def __str__(self):
+        return f"{self.excerpt.title} - {self.header} ({self.topic_tag})"
+
