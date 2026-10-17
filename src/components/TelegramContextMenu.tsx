@@ -104,7 +104,7 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
                   onClose();
                 }}
                 className={`text-xl hover:scale-135 active:scale-95 transition-transform duration-150 p-1 cursor-pointer rounded-full ${
-                  hasReacted ? 'bg-blue-600/30 ring-1 ring-blue-500' : ''
+                  hasReacted ? 'bg-accent-strong/30 ring-1 ring-accent' : ''
                 }`}
                 title={`React with ${emoji}`}
               >
@@ -112,13 +112,13 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
               </button>
             );
           })}
-          <div className="w-5 h-5 rounded-full bg-[#202f42] flex items-center justify-center text-slate-400 hover:text-white cursor-pointer ml-0.5">
+          <div className="w-5 h-5 rounded-full bg-[#202f42] flex items-center justify-center text-ink-muted hover:text-white cursor-pointer ml-0.5">
             <ChevronDown className="w-3.5 h-3.5" />
           </div>
         </div>
 
         {/* Telegram-style Dropdown Menu */}
-        <div className="w-56 rounded-2xl bg-[#16212e]/95 backdrop-blur-md border border-[#26374a] shadow-2xl py-1.5 overflow-hidden text-slate-200">
+        <div className="w-56 rounded-2xl bg-[#16212e]/95 backdrop-blur-md border border-[#26374a] shadow-2xl py-1.5 overflow-hidden text-ink">
           {/* Reply */}
           <button
             type="button"
@@ -128,7 +128,7 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[#202f42] hover:text-white transition-colors cursor-pointer text-left"
           >
-            <Reply className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.2]" />
+            <Reply className="w-4 h-4 text-ink-muted shrink-0 stroke-[2.2]" />
             <span>Reply</span>
           </button>
 
@@ -142,7 +142,7 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
               }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[#202f42] hover:text-white transition-colors cursor-pointer text-left"
             >
-              <Edit2 className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.2]" />
+              <Edit2 className="w-4 h-4 text-ink-muted shrink-0 stroke-[2.2]" />
               <span>Edit</span>
             </button>
           )}
@@ -156,7 +156,7 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[#202f42] hover:text-white transition-colors cursor-pointer text-left"
           >
-            <Pin className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.2]" />
+            <Pin className="w-4 h-4 text-ink-muted shrink-0 stroke-[2.2]" />
             <span>Pin</span>
           </button>
 
@@ -169,7 +169,7 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[#202f42] hover:text-white transition-colors cursor-pointer text-left"
           >
-            <Copy className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.2]" />
+            <Copy className="w-4 h-4 text-ink-muted shrink-0 stroke-[2.2]" />
             <span>Copy Text</span>
           </button>
 
@@ -182,7 +182,7 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[#202f42] hover:text-white transition-colors cursor-pointer text-left"
           >
-            <Forward className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.2]" />
+            <Forward className="w-4 h-4 text-ink-muted shrink-0 stroke-[2.2]" />
             <span>Forward</span>
           </button>
 
@@ -210,7 +210,7 @@ export const TelegramContextMenu: React.FC<TelegramContextMenuProps> = ({
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[#202f42] hover:text-white transition-colors cursor-pointer text-left border-t border-[#202f42]/70 mt-1"
           >
-            <CheckCircle className="w-4 h-4 text-slate-400 shrink-0 stroke-[2.2]" />
+            <CheckCircle className="w-4 h-4 text-ink-muted shrink-0 stroke-[2.2]" />
             <span>Select</span>
           </button>
         </div>

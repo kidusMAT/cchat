@@ -316,25 +316,25 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
   return (
     <div
       ref={pickerRef}
-      className={`absolute ${positionClasses} z-50 w-72 sm:w-80 rounded-2xl bg-[#0f0f18] border border-[#232338] shadow-2xl backdrop-blur-xl flex flex-col overflow-hidden text-slate-200 select-none animate-in fade-in zoom-in-95 duration-150`}
+      className={`absolute ${positionClasses} z-50 w-72 sm:w-80 rounded-2xl bg-canvas-2 border border-line-2 shadow-2xl backdrop-blur-xl flex flex-col overflow-hidden text-ink select-none animate-in fade-in zoom-in-95 duration-150`}
       style={{ maxHeight: '380px' }}
     >
       {/* Search Header */}
       <div className="p-2.5 border-b border-[#1c1c2e] flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-ink-faint absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search emoji..."
             autoFocus
-            className="w-full bg-[#161624] border border-[#232338] rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            className="w-full bg-surface border border-line-2 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder:text-ink-faint focus:outline-none focus:border-accent transition-colors"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-white"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-ink-muted hover:text-white"
             >
               <X className="w-3 h-3" />
             </button>
@@ -342,7 +342,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 text-slate-400 hover:text-white hover:bg-[#1a1a2c] rounded-lg transition-colors cursor-pointer"
+          className="p-1.5 text-ink-muted hover:text-white hover:bg-surface-2 rounded-lg transition-colors cursor-pointer"
           title="Close emoji picker"
         >
           <X className="w-4 h-4" />
@@ -351,7 +351,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
 
       {/* Category Tabs (shown only when not searching) */}
       {!searchTerm && (
-        <div className="flex items-center px-2 py-1.5 gap-1 border-b border-[#171724] bg-[#0c0c14] overflow-x-auto scrollbar-none">
+        <div className="flex items-center px-2 py-1.5 gap-1 border-b border-line bg-canvas-2 overflow-x-auto scrollbar-none">
           {EMOJI_CATEGORIES.map(({ id, name, icon: Icon }) => (
             <button
               key={id}
@@ -359,8 +359,8 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
               title={name}
               className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center ${
                 activeCategory === id
-                  ? 'bg-blue-600/20 text-blue-400 font-bold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#181827]'
+                  ? 'bg-accent-strong/20 text-accent font-bold'
+                  : 'text-ink-muted hover:text-ink hover:bg-surface'
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -373,11 +373,11 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
       <div className="flex-1 overflow-y-auto p-2.5 max-h-56 scrollbar-thin scrollbar-thumb-slate-700">
         {filteredEmojis ? (
           <div>
-            <div className="text-[10px] font-semibold text-slate-400 px-1 mb-1.5 uppercase tracking-wider">
+            <div className="text-[10px] font-semibold text-ink-muted px-1 mb-1.5 uppercase tracking-wider">
               Search Results ({filteredEmojis.length})
             </div>
             {filteredEmojis.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500">
+              <div className="py-8 text-center text-xs text-ink-faint">
                 No emojis found for "{searchTerm}"
               </div>
             ) : (
@@ -391,7 +391,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
                       onClose();
                     }}
                     title={keywords[0]}
-                    className="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:bg-[#1f1f33] active:scale-90 transition-all cursor-pointer"
+                    className="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:bg-surface-2 active:scale-90 transition-all cursor-pointer"
                   >
                     {emoji}
                   </button>
@@ -401,7 +401,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
           </div>
         ) : (
           <div>
-            <div className="text-[10px] font-semibold text-slate-400 px-1 mb-1.5 uppercase tracking-wider">
+            <div className="text-[10px] font-semibold text-ink-muted px-1 mb-1.5 uppercase tracking-wider">
               {currentCategoryObj?.name}
             </div>
             <div className="grid grid-cols-7 sm:grid-cols-8 gap-1">
@@ -414,7 +414,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
                     onClose();
                   }}
                   title={keywords[0]}
-                  className="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:bg-[#1f1f33] active:scale-90 transition-all cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:bg-surface-2 active:scale-90 transition-all cursor-pointer"
                 >
                   {emoji}
                 </button>
@@ -425,8 +425,8 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
       </div>
 
       {/* Quick Reaction Bar at bottom */}
-      <div className="px-2.5 py-1.5 border-t border-[#171724] bg-[#0c0c14] flex items-center justify-between text-xs text-slate-400">
-        <span className="text-[10px] text-slate-500 font-medium">Frequently used</span>
+      <div className="px-2.5 py-1.5 border-t border-line bg-canvas-2 flex items-center justify-between text-xs text-ink-muted">
+        <span className="text-[10px] text-ink-faint font-medium">Frequently used</span>
         <div className="flex items-center gap-1">
           {['❤️', '🔥', '😂', '👍', '💀', '✨'].map((quickEmoji) => (
             <button
@@ -436,7 +436,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({
                 onSelectEmoji(quickEmoji);
                 onClose();
               }}
-              className="w-6 h-6 flex items-center justify-center text-sm rounded hover:bg-[#1a1a2b] transition-all cursor-pointer active:scale-90"
+              className="w-6 h-6 flex items-center justify-center text-sm rounded hover:bg-surface-2 transition-all cursor-pointer active:scale-90"
             >
               {quickEmoji}
             </button>

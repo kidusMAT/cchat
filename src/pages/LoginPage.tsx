@@ -1,16 +1,7 @@
 import React, { useState } from 'react';
 import { authStorage, cchatApi, UserProfile } from '../services/api';
-
-// Shared double chat-bubble logo icon (duplicated locally so LoginPage is standalone)
-const CchatLogoIcon = () => (
-  <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
-    xmlns="http://www.w3.org/2000/svg" className="text-blue-400 stroke-current">
-    <rect x="2" y="3" width="14" height="10" rx="3" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M3 13L2 16L6 13" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M8 14V17C8 18.1046 8.89543 19 10 19H17L21 21L20.2 18.2C21.3 17.5 22 16.3 22 15C22 13.8954 21.1046 13 20 13H18"
-      strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
+import { CchatLogo } from '../components/CchatLogo';
+import { Button, Badge } from '../components/ui';
 
 interface LoginPageProps {
   onLogin: (user: UserProfile | string) => void;
@@ -18,16 +9,69 @@ interface LoginPageProps {
 
 type Tab = 'login' | 'signup';
 
+const FEATURES = [
+  'Public excerpts',
+  'Anonymous by default',
+  'React with vibes',
+  'Save the plot twists',
+];
+
+interface FieldProps {
+  id: string;
+  label: string;
+  type: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  autoComplete?: string;
+  leading?: string;
+}
+
+function Field({
+  id,
+  label,
+  type,
+  value,
+  onChange,
+  placeholder,
+  autoComplete,
+  leading,
+}: FieldProps) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-xs font-semibold text-ink-muted">
+        {label}
+      </label>
+      <div className="relative">
+        {leading && (
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 select-none text-sm font-bold text-ink-faint">
+            {leading}
+          </span>
+        )}
+        <input
+          id={id}
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          className={`w-full rounded-xl border border-line-2 bg-canvas-2 py-3 text-sm text-ink placeholder:text-ink-faint transition-colors focus:border-accent focus:outline-none ${
+            leading ? 'pl-8 pr-4' : 'px-4'
+          }`}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [tab, setTab] = useState<Tab>('login');
 
-  // Login state
   const [loginHandle, setLoginHandle] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Sign up state
   const [signupHandle, setSignupHandle] = useState('');
   const [signupDisplayName, setSignupDisplayName] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
@@ -36,7 +80,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [signupSuccess, setSignupSuccess] = useState('');
   const [signupLoading, setSignupLoading] = useState(false);
 
-  // ── Login submit ─────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -61,7 +104,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
   };
 
-  // ── Sign-up submit ───────────────────────────────────────────
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSignupError('');
@@ -80,7 +122,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
     setSignupLoading(true);
     try {
-      const cleanHandle = signupHandle.trim().startsWith('@') ? signupHandle.trim() : `@${signupHandle.trim()}`;
+      const cleanHandle = signupHandle.trim().startsWith('@')
+        ? signupHandle.trim()
+        : `@${signupHandle.trim()}`;
       const data = await cchatApi.register({
         username: cleanHandle.replace(/^@/, ''),
         handle: cleanHandle,
@@ -103,7 +147,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
   };
 
-  // ── Demo / bypass login (for local dev) ─────────────────────
   const handleDemoLogin = async () => {
     setLoginLoading(true);
     setLoginError('');
@@ -121,7 +164,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         id: 1,
         handle: '@mayamaybe',
         display_name: 'Maya Chen',
-        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
+        avatar_url:
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
         bio: 'A little less posting. A lot more plot.',
       };
       authStorage.setToken('demo-token-maya');
@@ -134,78 +178,82 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="h-screen w-screen bg-[#09090f] text-slate-100 flex font-sans overflow-hidden">
-      {/* ── Left panel — branding ─────────────────────────────── */}
-      <div className="hidden lg:flex w-[45%] flex-col justify-between p-14 border-r border-[#171722] bg-[#080810] relative overflow-hidden">
-        {/* Ambient glow */}
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-32 -right-20 w-80 h-80 bg-indigo-600/8 rounded-full blur-3xl pointer-events-none" />
+    <div className="flex h-screen w-screen overflow-hidden bg-canvas-deep font-sans text-ink">
+      <div className="relative hidden w-[45%] flex-col justify-between overflow-hidden border-r border-line bg-canvas p-14 lg:flex">
+        <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-accent/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -right-20 h-80 w-80 rounded-full bg-indigo-600/10 blur-3xl" />
 
-        {/* Logo */}
         <div className="flex items-center gap-3">
-          <CchatLogoIcon />
+          <CchatLogo size={36} />
           <span className="text-2xl font-black tracking-tight text-white">CCHAT</span>
         </div>
 
-        {/* Hero text */}
-        <div className="space-y-5 relative z-10">
-          <div className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-400 font-mono">
+        <div className="relative z-10 space-y-5">
+          <div className="font-mono text-[11px] font-black uppercase tracking-[0.2em] text-accent">
             Real chats. Main-character energy.
           </div>
-          <h1 className="text-4xl font-black text-white leading-[1.15] tracking-tight">
-            A little less posting.<br />A lot more plot.
+          <h1 className="text-4xl font-black leading-[1.15] tracking-tight text-white">
+            A little less posting.
+            <br />A lot more plot.
           </h1>
-          <p className="text-sm text-slate-400 leading-relaxed max-w-xs">
-            Share your best conversations with the world — or keep them just between you. CCHAT is where real talk goes public.
+          <p className="max-w-xs text-sm leading-relaxed text-ink-muted">
+            Share your best conversations with the world — or keep them just between
+            you. CCHAT is where real talk goes public.
           </p>
 
-          {/* Feature pills */}
           <div className="flex flex-wrap gap-2 pt-2">
-            {['Public excerpts', 'Anonymous by default', 'React with vibes', 'Save the plot twists'].map(f => (
-              <span key={f} className="text-[11px] font-semibold text-slate-400 bg-[#141422] border border-[#232338] px-3 py-1.5 rounded-full">
+            {FEATURES.map((f) => (
+              <Badge key={f} className="px-3 py-1.5">
                 {f}
-              </span>
+              </Badge>
             ))}
           </div>
         </div>
 
-        {/* Footer quote */}
-        <div className="text-[11px] text-slate-600 font-mono">
+        <div className="font-mono text-[11px] text-ink-faint">
           © 2026 CCHAT. Keep it human.
         </div>
       </div>
 
-      {/* ── Right panel — auth form ───────────────────────────── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 overflow-y-auto">
-        {/* Mobile logo */}
-        <div className="lg:hidden flex items-center gap-2 mb-10">
-          <CchatLogoIcon />
+      <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10">
+        <div className="mb-10 flex items-center gap-2 lg:hidden">
+          <CchatLogo size={30} />
           <span className="text-xl font-black tracking-tight text-white">CCHAT</span>
         </div>
 
         <div className="w-full max-w-sm space-y-7">
-          {/* Heading */}
           <div>
-            <h2 className="text-2xl font-black text-white tracking-tight">
+            <h2 className="text-2xl font-black tracking-tight text-white">
               {tab === 'login' ? 'Welcome back.' : 'Join the chat.'}
             </h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="mt-1 text-sm text-ink-muted">
               {tab === 'login'
                 ? 'Sign in to your CCHAT account.'
                 : 'Create an account. No algorithm required.'}
             </p>
           </div>
 
-          {/* Tab switcher */}
-          <div className="flex rounded-xl bg-[#111120] border border-[#1e1e2e] p-1 gap-1">
-            {(['login', 'signup'] as Tab[]).map(t => (
+          <div
+            role="tablist"
+            aria-label="Authentication"
+            className="flex gap-1 rounded-xl border border-line-2 bg-canvas-2 p-1"
+          >
+            {(['login', 'signup'] as Tab[]).map((t) => (
               <button
                 key={t}
-                onClick={() => { setTab(t); setLoginError(''); setSignupError(''); setSignupSuccess(''); }}
-                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all cursor-pointer ${
+                role="tab"
+                type="button"
+                aria-selected={tab === t}
+                onClick={() => {
+                  setTab(t);
+                  setLoginError('');
+                  setSignupError('');
+                  setSignupSuccess('');
+                }}
+                className={`flex-1 cursor-pointer rounded-lg py-2 text-sm font-bold transition-all ${
                   tab === t
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-accent text-white shadow-md shadow-accent/25'
+                    : 'text-ink-muted hover:text-white'
                 }`}
               >
                 {t === 'login' ? 'Log in' : 'Sign up'}
@@ -213,149 +261,150 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             ))}
           </div>
 
-          {/* ── LOGIN FORM ──────────────────────────────────── */}
           {tab === 'login' && (
             <form onSubmit={handleLogin} className="space-y-4">
               {signupSuccess && (
-                <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3">
+                <div
+                  role="status"
+                  className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-400"
+                >
                   {signupSuccess}
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400">Username or @handle</label>
-                <input
-                  type="text"
-                  value={loginHandle}
-                  onChange={e => setLoginHandle(e.target.value)}
-                  placeholder="kidusMAT or @kidusMAT"
-                  autoComplete="username"
-                  className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
-                />
-              </div>
+              <Field
+                id="login-handle"
+                label="Username or @handle"
+                type="text"
+                value={loginHandle}
+                onChange={setLoginHandle}
+                placeholder="kidusMAT or @kidusMAT"
+                autoComplete="username"
+              />
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-400">Password</label>
-                  <button type="button" className="text-[11px] text-blue-400 hover:text-blue-300 cursor-pointer">
+                  <label
+                    htmlFor="login-password"
+                    className="text-xs font-semibold text-ink-muted"
+                  >
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    className="cursor-pointer text-[11px] text-accent hover:text-accent-bright"
+                  >
                     Forgot password?
                   </button>
                 </div>
                 <input
+                  id="login-password"
                   type="password"
                   value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
+                  onChange={(e) => setLoginPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
-                  className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
+                  className="w-full rounded-xl border border-line-2 bg-canvas-2 px-4 py-3 text-sm text-ink placeholder:text-ink-faint transition-colors focus:border-accent focus:outline-none"
                 />
               </div>
 
               {loginError && (
-                <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl px-4 py-3">
+                <div
+                  role="alert"
+                  className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-400"
+                >
                   {loginError}
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={loginLoading}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-blue-500/25 transition-all active:scale-[0.98] cursor-pointer"
-              >
+              <Button type="submit" size="lg" fullWidth loading={loginLoading}>
                 {loginLoading ? 'Signing in…' : 'Sign in'}
-              </button>
+              </Button>
 
-              {/* Divider */}
               <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-[#1e1e2e]" />
-                <span className="text-[11px] text-slate-600 font-semibold">OR</span>
-                <div className="flex-1 h-px bg-[#1e1e2e]" />
+                <div className="h-px flex-1 bg-line-2" />
+                <span className="text-[11px] font-semibold text-ink-faint">OR</span>
+                <div className="h-px flex-1 bg-line-2" />
               </div>
 
-              {/* Demo bypass */}
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="lg"
+                fullWidth
                 onClick={handleDemoLogin}
-                className="w-full py-3 rounded-xl bg-[#111120] hover:bg-[#18182a] border border-[#232338] text-slate-300 hover:text-white font-bold text-sm transition-all active:scale-[0.98] cursor-pointer"
               >
                 Continue as Maya (demo)
-              </button>
+              </Button>
             </form>
           )}
 
-          {/* ── SIGN UP FORM ─────────────────────────────────── */}
           {tab === 'signup' && (
             <form onSubmit={handleSignup} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400">Display name</label>
-                <input
-                  type="text"
-                  value={signupDisplayName}
-                  onChange={e => setSignupDisplayName(e.target.value)}
-                  placeholder="Alex Morgan"
-                  autoComplete="name"
-                  className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
-                />
-              </div>
+              <Field
+                id="signup-name"
+                label="Display name"
+                type="text"
+                value={signupDisplayName}
+                onChange={setSignupDisplayName}
+                placeholder="Alex Morgan"
+                autoComplete="name"
+              />
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400">Handle</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold select-none">@</span>
-                  <input
-                    type="text"
-                    value={signupHandle.startsWith('@') ? signupHandle.slice(1) : signupHandle}
-                    onChange={e => setSignupHandle(e.target.value)}
-                    placeholder="alexm"
-                    autoComplete="username"
-                    className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
-                  />
-                </div>
-              </div>
+              <Field
+                id="signup-handle"
+                label="Handle"
+                type="text"
+                value={signupHandle.startsWith('@') ? signupHandle.slice(1) : signupHandle}
+                onChange={setSignupHandle}
+                placeholder="alexm"
+                autoComplete="username"
+                leading="@"
+              />
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400">Password</label>
-                <input
-                  type="password"
-                  value={signupPassword}
-                  onChange={e => setSignupPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
-                />
-              </div>
+              <Field
+                id="signup-password"
+                label="Password"
+                type="password"
+                value={signupPassword}
+                onChange={setSignupPassword}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-400">Confirm password</label>
-                <input
-                  type="password"
-                  value={signupConfirm}
-                  onChange={e => setSignupConfirm(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  className="w-full bg-[#0f0f1a] border border-[#212132] focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-colors"
-                />
-              </div>
+              <Field
+                id="signup-confirm"
+                label="Confirm password"
+                type="password"
+                value={signupConfirm}
+                onChange={setSignupConfirm}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
 
               {signupError && (
-                <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl px-4 py-3">
+                <div
+                  role="alert"
+                  className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-400"
+                >
                   {signupError}
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={signupLoading}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-blue-500/25 transition-all active:scale-[0.98] cursor-pointer"
-              >
+              <Button type="submit" size="lg" fullWidth loading={signupLoading}>
                 {signupLoading ? 'Creating account…' : 'Create account'}
-              </button>
+              </Button>
 
-              <p className="text-[11px] text-slate-600 text-center leading-relaxed">
+              <p className="text-center text-[11px] leading-relaxed text-ink-faint">
                 By signing up you agree to our{' '}
-                <span className="text-blue-400 hover:underline cursor-pointer">Community rules</span>{' '}
+                <span className="cursor-pointer text-accent hover:underline">
+                  Community rules
+                </span>{' '}
                 and{' '}
-                <span className="text-blue-400 hover:underline cursor-pointer">Privacy policy</span>.
+                <span className="cursor-pointer text-accent hover:underline">
+                  Privacy policy
+                </span>
+                .
               </p>
             </form>
           )}

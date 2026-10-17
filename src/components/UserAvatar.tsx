@@ -10,10 +10,10 @@ export interface UserAvatarProps {
 }
 
 const GRADIENTS = [
-  'from-blue-600 to-indigo-700',
+  'from-accent-strong to-indigo-700',
   'from-purple-600 to-pink-700',
   'from-emerald-600 to-teal-700',
-  'from-cyan-600 to-blue-700',
+  'from-cyan-600 to-accent-strong',
   'from-amber-600 to-orange-700',
   'from-rose-600 to-red-700',
   'from-violet-600 to-purple-800',
@@ -64,7 +64,7 @@ export function UserAvatar({
   const initials = getInitials(name, handle);
   const gradient = getGradient(handle || name || '');
   const sizeClass = SIZE_CLASSES[size] || SIZE_CLASSES.md;
-  const ringClass = ring ? 'border border-[#2b2b3d]' : '';
+  const ringClass = ring ? 'border border-line-strong' : '';
 
   const hasValidImage = !!src && src.trim().length > 0 && !imgError;
 

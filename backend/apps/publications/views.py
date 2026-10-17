@@ -54,7 +54,7 @@ class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
             if user and user.is_authenticated:
                 try:
                     following_ids = user.profile.following.values_list('id', flat=True)
-                    qs = qs.filter(publishers__id__in=following_ids)
+                    qs = qs.filter(publishers__id__in=following_ids).distinct()
                 except UserProfile.DoesNotExist:
                     qs = qs.none()
             else:
