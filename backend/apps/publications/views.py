@@ -40,9 +40,13 @@ class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
         topic_tag = self.request.query_params.get('topic')
         publisher = self.request.query_params.get('publisher') or self.request.query_params.get('handle')
         if publisher:
-            handle = publisher if publisher.startswith('@') else f"@{publisher}"
-            qs = qs.filter(publishers__handle__iexact=handle)
-            return qs.order_by('-created_at')
+            if publisher.startswith('@#') or publisher.startswith('#'):
+                topic_tag = publisher.replace('@#', '#')
+                publisher = None
+            else:
+                handle = publisher if publisher.startswith('@') else f"@{publisher}"
+                qs = qs.filter(publishers__handle__iexact=handle)
+                return qs.order_by('-created_at')
 
         if topic_tag:
             qs = qs.filter(topic__tag=topic_tag)
@@ -60,58 +64,32 @@ class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
             else:
                 qs = qs.none()
         else:
-            # FYP (For You Page) Ranking Algorithm:
-            # Score = reads + (reactions * 3) + (saves * 8) + recency_boost + topic_affinity_boost
-            now = timezone.now()
-
-            # Base engagement annotations (distinct avoids cartesian duplicate counting)
-            qs = qs.annotate(
-                rx_count=Count('messages__reactions', distinct=True),
-                sv_count=Count('saved_by', distinct=True),
-            )
-
-            # Recency / Freshness boost
-            fresh_boost = Case(
-                When(created_at__gte=now - timedelta(hours=3), then=Value(6000)),
-                When(created_at__gte=now - timedelta(hours=24), then=Value(2500)),
-                When(created_at__gte=now - timedelta(days=3), then=Value(800)),
-                default=Value(0),
-                output_field=IntegerField(),
-            )
-
-            # Personalization / Topic affinity boost
-            preferred_tags = set()
-            user = self.request.user
-            if user and user.is_authenticated:
-                try:
-                    profile = user.profile
-                    saved_tags = SavedExcerpt.objects.filter(user=profile).values_list('excerpt__topic__tag', flat=True)
-                    saved_sec_tags = SavedExcerpt.objects.filter(user=profile).values_list('excerpt__sections__topic_tag', flat=True)
-                    reacted_tags = MessageReaction.objects.filter(user=profile).values_list('message__included_in_excerpts__topic__tag', flat=True)
-                    for t in list(saved_tags) + list(saved_sec_tags) + list(reacted_tags):
-                        if t:
-                            preferred_tags.add(t)
-                except Exception:
-                    pass
-
-            if preferred_tags:
-                affinity_boost = Case(
-                    When(Q(topic__tag__in=preferred_tags) | Q(sections__topic_tag__in=preferred_tags), then=Value(4000)),
+            # FYP (For You Page) Discovery:
+            # Randomize order across requests so feed is dynamic and never gets stuck in a static order
+            sort = self.request.query_params.get('sort')
+            if sort == 'ranked':
+                now = timezone.now()
+                qs = qs.annotate(
+                    rx_count=Count('messages__reactions', distinct=True),
+                    sv_count=Count('saved_by', distinct=True),
+                )
+                fresh_boost = Case(
+                    When(created_at__gte=now - timedelta(hours=3), then=Value(6000)),
+                    When(created_at__gte=now - timedelta(hours=24), then=Value(2500)),
+                    When(created_at__gte=now - timedelta(days=3), then=Value(800)),
                     default=Value(0),
                     output_field=IntegerField(),
                 )
+                qs = qs.annotate(
+                    fyp_score=(
+                        F('reads_count') +
+                        (F('rx_count') * 3) +
+                        (F('sv_count') * 8) +
+                        fresh_boost
+                    )
+                ).order_by('-fyp_score', '-created_at').distinct()
             else:
-                affinity_boost = Value(0, output_field=IntegerField())
-
-            qs = qs.annotate(
-                fyp_score=(
-                    F('reads_count') +
-                    (F('rx_count') * 3) +
-                    (F('sv_count') * 8) +
-                    fresh_boost +
-                    affinity_boost
-                )
-            ).order_by('-fyp_score', '-created_at').distinct()
+                qs = qs.order_by('?')
 
         return qs
 
@@ -188,15 +166,38 @@ def react_message(request, msg_id):
     return Response(counts, status=status.HTTP_200_OK)
 
 
-class SavedExcerptViewSet(viewsets.ReadOnlyModelViewSet):
+class SavedExcerptViewSet(viewsets.ModelViewSet):
     serializer_class = SavedExcerptSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        user = self.request.user
+        if user and user.is_authenticated:
+            try:
+                context['current_user_profile'] = user.profile
+            except UserProfile.DoesNotExist:
+                context['current_user_profile'] = None
+        else:
+            context['current_user_profile'] = None
+        return context
 
     def get_queryset(self):
         user = self.request.user
         if not user or not user.is_authenticated:
             return SavedExcerpt.objects.none()
         try:
-            return SavedExcerpt.objects.filter(user=user.profile).select_related('excerpt', 'excerpt__topic')
+            qs = SavedExcerpt.objects.filter(user=user.profile).select_related(
+                'excerpt', 'excerpt__topic', 'excerpt__conversation'
+            ).prefetch_related(
+                'excerpt__publishers', 'excerpt__messages', 'excerpt__sections'
+            )
+            collection = self.request.query_params.get('collection')
+            if collection and collection != 'All saved':
+                qs = qs.filter(collection_name__iexact=collection)
+            return qs
         except UserProfile.DoesNotExist:
             return SavedExcerpt.objects.none()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user.profile)

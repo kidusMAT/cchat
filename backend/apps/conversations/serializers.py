@@ -58,10 +58,27 @@ class ConversationSerializer(serializers.ModelSerializer):
     published_by_me = serializers.SerializerMethodField()
     partner_is_anonymous = serializers.SerializerMethodField()
     participants_summary = serializers.SerializerMethodField()
+    can_send_message = serializers.SerializerMethodField()
+    partner_user = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
-        fields = ['id', 'title', 'initials', 'participants', 'participants_summary', 'tag', 'preview', 'is_published', 'published_by_me', 'partner_is_anonymous', 'created_at', 'updated_at']
+        fields = [
+            'id', 'title', 'initials', 'participants', 'participants_summary',
+            'tag', 'preview', 'is_published', 'published_by_me', 'partner_is_anonymous',
+            'can_send_message', 'partner_user', 'unread_count', 'created_at', 'updated_at'
+        ]
+
+    def get_unread_count(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return 0
+        try:
+            profile = request.user.profile
+            return obj.messages.filter(seen_at__isnull=True).exclude(sender=profile).count()
+        except Exception:
+            return 0
 
     def get_is_published(self, obj):
         return obj.excerpts.filter(is_active=True).exists()
@@ -92,6 +109,42 @@ class ConversationSerializer(serializers.ModelSerializer):
         if len(names) <= 2:
             return f"{' & '.join(names)} · just the two of you"
         return f"{', '.join(names[:2])} and {len(names) - 2} more"
+
+    def get_partner_user(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return None
+        try:
+            profile = request.user.profile
+            other = obj.participants.exclude(id=profile.id).first()
+            if not other:
+                return None
+            is_following = profile.following.filter(id=other.id).exists()
+            return {
+                'id': other.id,
+                'handle': other.handle,
+                'display_name': other.display_name,
+                'avatar_url': other.avatar_url,
+                'is_following': is_following,
+            }
+        except Exception:
+            return None
+
+    def get_can_send_message(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        try:
+            profile = request.user.profile
+            other_participants = obj.participants.exclude(id=profile.id)
+            if not other_participants.exists():
+                return True
+            for other in other_participants:
+                if not profile.following.filter(id=other.id).exists():
+                    return False
+            return True
+        except Exception:
+            return False
 
 
 class ConversationDetailSerializer(ConversationSerializer):

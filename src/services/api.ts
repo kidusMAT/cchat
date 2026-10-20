@@ -36,6 +36,15 @@ export interface ChatSummary {
   published_by_me?: boolean;
   partner_is_anonymous?: boolean;
   participants_summary: string;
+  can_send_message?: boolean;
+  partner_user?: {
+    id: number;
+    handle: string;
+    display_name: string;
+    avatar_url: string;
+    is_following: boolean;
+  } | null;
+  unread_count?: number;
   updated_at: string;
 }
 
@@ -300,6 +309,12 @@ export const cchatApi = {
     return res.json();
   },
 
+  async markChatRead(id: number | string): Promise<{ detail: string; unread_count: number }> {
+    const res = await apiFetch(`/chats/${id}/mark_read/`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to mark chat ${id} as read`);
+    return res.json();
+  },
+
   async createChat(
     recipientIdOrHandle: number | string,
     text?: string,
@@ -324,7 +339,10 @@ export const cchatApi = {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error('Failed to start chat');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to start chat' }));
+      throw new Error(err.detail || 'Failed to start chat');
+    }
     return res.json();
   },
 
@@ -467,6 +485,22 @@ export const cchatApi = {
     if (!res.ok) throw new Error('Failed to load saved excerpts');
     const data = await res.json();
     return data.results || data;
+  },
+
+  async updateSavedExcerpt(savedId: number, collectionName: string): Promise<SavedExcerptItem> {
+    const res = await apiFetch(`/saved/${savedId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ collection_name: collectionName }),
+    });
+    if (!res.ok) throw new Error('Failed to update saved collection');
+    return res.json();
+  },
+
+  async deleteSavedExcerpt(savedId: number): Promise<void> {
+    const res = await apiFetch(`/saved/${savedId}/`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to remove saved excerpt');
   },
 
   async getTopics(): Promise<TopicItem[]> {

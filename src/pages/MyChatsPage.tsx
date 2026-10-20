@@ -24,6 +24,7 @@ import {
   Check,
   CheckCheck,
   Trash2,
+  Lock,
   PanelRight,
   Eye,
   EyeOff,
@@ -31,6 +32,8 @@ import {
   Layers,
   Sparkles,
   Split,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 import { cchatApi, ChatSummary, ChatDetail, ChatMessage, ChatSection } from '../services/api';
 import { EmojiPicker } from '../components/EmojiPicker';
@@ -65,7 +68,7 @@ function getQuickReactionBubbleBg(quickReactions?: Record<string, string[]>, isM
     return 'bg-gradient-to-br from-[#142338] via-[#0f1b2b] to-[#0a121d] border border-[#234570] text-blue-50';
   }
   if (['💀', '😂', '😭', '☠️', 'skull'].includes(topEmoji)) {
-    return 'bg-gradient-to-br from-[#241530] via-[#1c1026] to-[#120a1a] border border-[#532470] text-purple-100';
+    return 'bg-[#23262f] border border-[#3a3f4e] text-slate-100';
   }
   if (['🔥', '🌶️', '💯', '⚡', 'fire'].includes(topEmoji)) {
     return 'bg-gradient-to-br from-[#361e10] via-[#2a170c] to-[#1c1008] border border-[#6e3b18] text-amber-100';
@@ -94,8 +97,73 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [followingPartner, setFollowingPartner] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [mutedChatIds, setMutedChatIds] = useState<Set<number>>(() => {
+    try {
+      const raw = localStorage.getItem('cchat_muted_chats');
+      return new Set<number>(raw ? JSON.parse(raw) : []);
+    } catch {
+      return new Set<number>();
+    }
+  });
+
+  const updateChatBadgeCount = (chatList: ChatSummary[], currentMuted: Set<number>) => {
+    if (!onChatCountChange) return;
+    const totalUnread = chatList.reduce((acc, c) => {
+      if (currentMuted.has(c.id)) return acc;
+      return acc + (c.unread_count || 0);
+    }, 0);
+    onChatCountChange(totalUnread);
+  };
+
+  const toggleMuteChat = (chatId: number) => {
+    setMutedChatIds((prev) => {
+      const next = new Set(prev);
+      const isCurrentlyMuted = next.has(chatId);
+      if (isCurrentlyMuted) {
+        next.delete(chatId);
+        showToast('Conversation notifications unmuted');
+      } else {
+        next.add(chatId);
+        showToast('Conversation notifications muted');
+      }
+      localStorage.setItem('cchat_muted_chats', JSON.stringify(Array.from(next)));
+      updateChatBadgeCount(chats, next);
+      return next;
+    });
+  };
+
+  const handleFollowPartner = async () => {
+    if (!currentChat?.partner_user) return;
+    setFollowingPartner(true);
+    try {
+      const res = await cchatApi.toggleFollow(currentChat.partner_user.handle);
+      if (res.is_following) {
+        setCurrentChat((prev) =>
+          prev
+            ? {
+                ...prev,
+                can_send_message: true,
+                partner_user: prev.partner_user
+                  ? {
+                      ...prev.partner_user,
+                      is_following: true,
+                    }
+                  : prev.partner_user,
+              }
+            : prev
+        );
+        showToast(`Now following ${currentChat.partner_user.handle}. You can now send messages!`);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to follow user');
+    } finally {
+      setFollowingPartner(false);
+    }
+  };
 
   // File and Emoji states
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -131,6 +199,9 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const unreadMarkerRef = useRef<HTMLDivElement>(null);
+  const [firstUnreadMsgId, setFirstUnreadMsgId] = useState<number | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -251,9 +322,7 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
     try {
       const data = await cchatApi.getChats();
       setChats(data);
-      if (onChatCountChange) {
-        onChatCountChange(data.length);
-      }
+      updateChatBadgeCount(data, mutedChatIds);
       if (data.length > 0) {
         if (initialChatId != null && data.some((c) => c.id === initialChatId)) {
           setSelectedChatId(initialChatId);
@@ -279,7 +348,15 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
     setLoadingDetail(true);
     cchatApi.getChatDetail(selectedChatId)
       .then((detail) => {
-        if (isMounted) setCurrentChat(detail);
+        if (isMounted) {
+          setCurrentChat(detail);
+          cchatApi.markChatRead(selectedChatId).catch(() => {});
+          setChats((prev) => {
+            const next = prev.map((c) => (c.id === selectedChatId ? { ...c, unread_count: 0 } : c));
+            updateChatBadgeCount(next, mutedChatIds);
+            return next;
+          });
+        }
       })
       .catch((err) => {
         if (isMounted) showToast(err.message || 'Failed to load chat details');
@@ -289,6 +366,61 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
       });
     return () => { isMounted = false; };
   }, [selectedChatId]);
+
+  // Track read/unread messages and smoothly resume where the user left off
+  useEffect(() => {
+    if (!currentChat || !currentChat.messages || currentChat.messages.length === 0) {
+      setFirstUnreadMsgId(null);
+      return;
+    }
+
+    const storageKey = `cchat_chat_${currentChat.id}_last_read_id`;
+    const storedLastRead = localStorage.getItem(storageKey);
+    const msgs = currentChat.messages;
+
+    let unreadId: number | null = null;
+    if (storedLastRead !== null) {
+      const lastReadId = parseInt(storedLastRead, 10);
+      const firstUnread = msgs.find((m) => m.id > lastReadId);
+      if (firstUnread) {
+        unreadId = firstUnread.id;
+      }
+    } else {
+      // First time opening: detect unread incoming message from partner
+      const firstUnread = msgs.find((m) => m.is_read === false && !m.is_self && !m.is_maya);
+      if (firstUnread) {
+        unreadId = firstUnread.id;
+      }
+    }
+
+    setFirstUnreadMsgId(unreadId);
+
+    // Smoothly scroll to where the user left off
+    const scrollTimer = setTimeout(() => {
+      if (unreadId && unreadMarkerRef.current) {
+        unreadMarkerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }, 150);
+
+    // After viewing, update last read id in localStorage
+    const markReadTimer = setTimeout(() => {
+      const latest = msgs[msgs.length - 1];
+      if (latest) {
+        localStorage.setItem(storageKey, String(latest.id));
+      }
+    }, 2500);
+
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(markReadTimer);
+      const latest = msgs[msgs.length - 1];
+      if (latest) {
+        localStorage.setItem(storageKey, String(latest.id));
+      }
+    };
+  }, [currentChat?.id]);
 
   const filteredChats = chats.filter((c) => {
     if (chatFilter === 'Published' && !c.is_published) return false;
@@ -496,6 +628,11 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
     e.preventDefault();
     if ((!typedMessage.trim() && !pendingAttachment) || !selectedChatId || sendingMessage) return;
 
+    if (currentChat?.partner_user && !currentChat.partner_user.is_following) {
+      showToast(`You must follow ${currentChat.partner_user.handle} to send messages.`);
+      return;
+    }
+
     const text = typedMessage.trim();
     setSendingMessage(true);
     setShowEmojiPicker(false);
@@ -551,12 +688,24 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
           messages: [...currentChat.messages, newMsg],
           preview: text || (attachmentPayload ? `Shared attachment: ${attachmentPayload.name}` : ''),
         });
+        localStorage.setItem(`cchat_chat_${selectedChatId}_last_read_id`, String(newMsg.id));
+        setFirstUnreadMsgId(null);
+        setTimeout(() => {
+          if (messagesContainerRef.current) {
+            messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+          }
+        }, 50);
       }
-      // Update preview in list
-      setChats(prev => prev.map(c => c.id === selectedChatId ? {
-        ...c,
-        preview: text || (attachmentPayload ? `Shared attachment: ${attachmentPayload.name}` : '')
-      } : c));
+      // Update preview in list and keep unread_count at 0
+      setChats(prev => {
+        const next = prev.map(c => c.id === selectedChatId ? {
+          ...c,
+          preview: text || (attachmentPayload ? `Shared attachment: ${attachmentPayload.name}` : ''),
+          unread_count: 0,
+        } : c);
+        updateChatBadgeCount(next, mutedChatIds);
+        return next;
+      });
       showToast('Message sent (private)');
     } catch (err: any) {
       showToast(err.message || 'Failed to send message');
@@ -813,6 +962,8 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
             ) : (
               filteredChats.map((chat) => {
                 const isSelected = chat.id === selectedChatId;
+                const isMuted = mutedChatIds.has(chat.id);
+                const hasUnread = (chat.unread_count || 0) > 0;
                 return (
                   <div
                     key={chat.id}
@@ -823,11 +974,23 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                         : 'bg-canvas-2 border-transparent text-ink-muted hover:bg-surface hover:text-ink-soft'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-white tracking-tight">{chat.title}</h4>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <h4 className="text-xs font-bold text-white tracking-tight truncate">{chat.title}</h4>
+                        {isMuted && (
+                          <span title="Notifications muted" className="inline-flex shrink-0">
+                            <BellOff className="w-3.5 h-3.5 text-ink-faint" />
+                          </span>
+                        )}
+                      </div>
+                      {!isMuted && hasUnread && (
+                        <span className="text-[10px] font-bold bg-accent-strong text-white px-1.5 py-0.2 rounded-full min-w-4 text-center leading-tight shadow-xs shrink-0">
+                          {chat.unread_count! > 99 ? '99+' : chat.unread_count}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-ink-muted mt-1 truncate">{chat.preview || 'No messages yet'}</p>
-                    <div className="mt-2.5">
+                    <div className="mt-2.5 flex items-center justify-between">
                       <span
                         className={`text-[9px] font-black tracking-wider px-2 py-0.5 rounded-full ${
                           chat.is_published
@@ -837,6 +1000,9 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                       >
                         {chat.is_published ? 'PUBLISHED' : (chat.tag || 'PRIVATE')}
                       </span>
+                      {isMuted && (
+                        <span className="text-[10px] text-ink-faint font-medium">Muted</span>
+                      )}
                     </div>
                   </div>
                 );
@@ -865,11 +1031,11 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
         ) : (
           <>
             {/* Header */}
-            <header className="h-16 px-4 sm:px-6 border-b border-line flex items-center justify-between shrink-0 bg-canvas-deep">
-              <div className="flex items-center gap-2 sm:gap-3">
+            <header className="h-14 sm:h-16 px-3 sm:px-6 border-b border-line flex items-center justify-between shrink-0 bg-canvas-deep gap-2">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 <button
                   onClick={() => setSelectedChatId(null)}
-                  className="md:hidden p-1.5 -ml-1 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer"
+                  className="md:hidden p-1.5 -ml-1 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer shrink-0"
                   title="Back to conversations"
                 >
                   <ChevronLeft className="w-5 h-5" />
@@ -886,7 +1052,7 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                 >
                   {currentChat.initials || 'CC'}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-bold text-white tracking-tight truncate">{currentChat.title}</h3>
                   <p
                     onClick={() => {
@@ -903,11 +1069,11 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
               </div>
 
               {/* Details and Eye toggle buttons */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={openPublishModal}
-                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${
+                  className={`p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shrink-0 ${
                     currentChat.is_published
                       ? 'bg-accent-strong/20 text-accent border border-accent/40 shadow-sm'
                       : 'text-ink-muted hover:text-white hover:bg-surface border border-transparent'
@@ -926,8 +1092,31 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
 
                 <button
                   type="button"
+                  onClick={() => toggleMuteChat(currentChat.id)}
+                  className={`p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shrink-0 ${
+                    mutedChatIds.has(currentChat.id)
+                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                      : 'text-ink-muted hover:text-white hover:bg-surface border border-transparent'
+                  }`}
+                  title={mutedChatIds.has(currentChat.id) ? 'Notifications are muted (Click to unmute)' : 'Mute conversation notifications'}
+                >
+                  {mutedChatIds.has(currentChat.id) ? (
+                    <>
+                      <BellOff className="w-4 h-4 text-amber-400" />
+                      <span className="hidden sm:inline">Muted</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="w-4 h-4" />
+                      <span className="hidden sm:inline">Mute</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setShowDetails((prev) => !prev)}
-                  className={`p-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${
+                  className={`p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shrink-0 ${
                     showDetails
                       ? 'bg-accent-strong/25 text-accent border border-accent/40'
                       : 'text-ink-muted hover:text-white hover:bg-surface border border-transparent'
@@ -941,27 +1130,32 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
             </header>
 
             {/* Published / Private Banner */}
-            <div className="px-6 py-2 bg-[#0c101d] border-b border-[#141e33] flex items-center justify-between shrink-0">
-              <span className="text-xs text-accent/90 font-medium flex items-center gap-2">
+            <div className="px-3 sm:px-6 py-2 bg-[#090f1c] border-b border-[#141e33] flex items-center justify-between gap-2 shrink-0 shadow-sm">
+              <span className="text-[11px] sm:text-xs text-accent/90 font-medium flex items-center gap-1.5 sm:gap-2 min-w-0">
                 {currentChat.is_published ? (
                   <>
-                    <Eye className="w-3.5 h-3.5 text-accent stroke-[1.8]" />
-                    <span>
-                      Public chat in Discovery · All messages public ·{' '}
-                      {currentChat.partner_is_anonymous !== false
-                        ? 'Partner identity: Anonymous'
-                        : 'Both participants public'}
+                    <Eye className="w-3.5 h-3.5 text-accent stroke-[1.8] shrink-0" />
+                    <span className="truncate">
+                      <span className="sm:hidden">
+                        Public chat · {currentChat.partner_is_anonymous !== false ? 'Anonymous partner' : 'Both public'}
+                      </span>
+                      <span className="hidden sm:inline">
+                        Public chat in Discovery · All messages public ·{' '}
+                        {currentChat.partner_is_anonymous !== false
+                          ? 'Partner identity: Anonymous'
+                          : 'Both participants public'}
+                      </span>
                     </span>
                   </>
                 ) : (
-                  'Private · nothing from this conversation is public'
+                  <span className="truncate">Private · nothing from this conversation is public</span>
                 )}
               </span>
               {currentChat.is_published && (
                 <button
                   type="button"
                   onClick={openPublishModal}
-                  className="text-[11px] font-bold text-accent hover:text-accent-bright underline cursor-pointer"
+                  className="text-[11px] font-bold text-accent hover:text-accent-bright underline cursor-pointer shrink-0 whitespace-nowrap pl-1"
                 >
                   Edit sections
                 </button>
@@ -970,7 +1164,7 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
 
 
             {/* Messages Thread */}
-            <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 space-y-4">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-8 py-3 sm:py-5 space-y-3 sm:space-y-4">
               <div className="text-center py-1">
                 <span className="text-[10px] font-semibold text-ink-faint tracking-wider uppercase font-mono">
                   ENCRYPTED PRIVATE THREAD
@@ -979,8 +1173,8 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
 
               {/* Pinned Message Banner */}
               {pinnedMessage && (
-                <div className="mb-3 px-4 py-2.5 rounded-2xl bg-[#141e2b] border border-accent/30 flex items-center justify-between shadow-lg">
-                  <div className="flex items-center gap-3 min-w-0">
+                <div className="mb-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-[#141e2b] border border-accent/30 flex items-center justify-between shadow-lg">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     <div className="w-7 h-7 rounded-lg bg-accent-strong/20 text-accent flex items-center justify-center shrink-0">
                       <Pin className="w-3.5 h-3.5 rotate-45" />
                     </div>
@@ -1020,13 +1214,33 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
 
                   return (
                     <React.Fragment key={msg.id}>
+                      {msg.id === firstUnreadMsgId && (
+                        <div
+                          ref={unreadMarkerRef}
+                          className="my-4 sm:my-5 relative flex items-center justify-center select-none py-1.5 pointer-events-none"
+                          aria-hidden="true"
+                        >
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full h-[1.5px] bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
+                          </div>
+                          <div className="relative px-3 bg-canvas-deep">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75 duration-1000" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-accent shadow-[0_0_8px_rgba(56,189,248,0.9)]" />
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       {sectionStartingHere && (
-                        <div className="my-5 py-2 flex items-center gap-3 select-none">
+                        <div className="my-3.5 sm:my-5 py-1 sm:py-1.5 flex items-center gap-2 sm:gap-3 select-none">
                           <div className="h-px bg-surface-2 flex-1"></div>
-                          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface border border-line-2 text-[11px] shadow-sm">
-                            <Eye className="w-3.5 h-3.5 text-accent stroke-[1.8]" />
-                            <span className="font-mono text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
-                              {sectionStartingHere.header}
+                          <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-surface border border-line-2 text-[10px] sm:text-[11px] shadow-sm shrink-0">
+                            <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-accent stroke-[1.8]" />
+                            <span className="font-mono text-cyan-400 font-bold uppercase tracking-wider text-[9px] sm:text-[10px]">
+                              {sectionStartingHere.header &&
+                              sectionStartingHere.header.toLowerCase() === (currentChat.title || '').toLowerCase()
+                                ? 'Part 1'
+                                : sectionStartingHere.header}
                             </span>
                             <span className="text-ink-faint">•</span>
                             <span className="text-accent font-semibold">{sectionStartingHere.topic_tag}</span>
@@ -1065,7 +1279,11 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                       <div
                         className={`space-y-1 flex flex-col ${
                           isMyMessage ? 'items-end' : 'items-start'
-                        } max-w-[80%] sm:max-w-[70%]`}
+                        } max-w-[85%] sm:max-w-[70%] transition-all ${
+                          msg.id === firstUnreadMsgId
+                            ? 'border-l-2 border-accent/80 pl-2.5 -ml-2.5'
+                            : ''
+                        }`}
                       >
                         {/* Message Bubble with dynamic reaction background and Telegram-style right-click context menu */}
                         {(() => {
@@ -1257,7 +1475,7 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
           )}
 
           {/* Input Bar */}
-          <div className="p-3 sm:p-4 border-t border-line bg-canvas-deep pb-20 md:pb-4 relative">
+          <div className="p-2.5 sm:p-4 border-t border-line bg-canvas-deep pb-2 sm:pb-3 relative shrink-0">
             {/* Telegram-style Selection Action Bar */}
             {selectedMessageIds.length > 0 && (
               <div className="absolute inset-0 z-40 bg-[#111724] border-t border-[#223147] p-3 px-4 flex items-center justify-between shadow-2xl animate-in slide-in-from-bottom duration-150">
@@ -1677,6 +1895,27 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                 </div>
               )}
 
+              {/* Follow Partner Banner if user is not following the other participant */}
+              {currentChat?.partner_user && !currentChat.partner_user.is_following && (
+                <div className="p-3 mb-2 rounded-2xl bg-canvas-2 border border-line-2 flex items-center justify-between gap-3 text-xs shadow-md">
+                  <div className="flex items-center gap-2.5 text-ink-muted min-w-0">
+                    <Lock className="w-4 h-4 text-accent shrink-0" />
+                    <span className="text-[11px] truncate leading-relaxed">
+                      You must follow <strong className="text-white">{currentChat.partner_user.handle}</strong> to send messages.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFollowPartner}
+                    disabled={followingPartner}
+                    className="px-3.5 py-1.5 rounded-xl bg-accent hover:bg-accent-bright font-bold text-xs text-white shrink-0 cursor-pointer shadow-sm transition-all flex items-center gap-1.5"
+                  >
+                    {followingPartner && <Loader2 className="w-3 h-3 animate-spin" />}
+                    <span>Follow</span>
+                  </button>
+                </div>
+              )}
+
               <form onSubmit={handleSendMessage} className="space-y-2">
                 {/* Hidden File Input */}
                 <input
@@ -1688,14 +1927,19 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                 />
 
                 <div
-                  className="relative rounded-2xl bg-canvas-2 border border-line-2 focus-within:border-accent/60 transition-colors flex items-center px-3.5 py-2"
+                  className="relative rounded-2xl bg-canvas-2 border border-line-2 focus-within:border-accent/60 transition-colors flex items-center px-3 sm:px-3.5 py-1.5 sm:py-2"
                   onPaste={handlePaste}
                 >
                   {/* File Upload Button */}
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-1.5 text-ink-muted hover:text-accent hover:bg-surface-2 rounded-lg transition-colors cursor-pointer"
+                    disabled={Boolean(currentChat?.partner_user && !currentChat.partner_user.is_following)}
+                    className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                      currentChat?.partner_user && !currentChat.partner_user.is_following
+                        ? 'text-ink-faint opacity-40 cursor-not-allowed'
+                        : 'text-ink-muted hover:text-accent hover:bg-surface-2'
+                    }`}
                     title="Attach image or file"
                   >
                     <Plus className="w-4 h-4 stroke-[2.2]" />
@@ -1708,7 +1952,9 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                     value={typedMessage}
                     onChange={(e) => setTypedMessage(e.target.value)}
                     placeholder={
-                      editingMessage
+                      currentChat?.partner_user && !currentChat.partner_user.is_following
+                        ? `Follow ${currentChat.partner_user.handle} to send messages...`
+                        : editingMessage
                         ? 'Edit message...'
                         : pendingAttachment
                         ? 'Add a caption...'
@@ -1716,8 +1962,8 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                         ? 'Write a reply...'
                         : 'Type a private reply...'
                     }
-                    disabled={sendingMessage}
-                    className="flex-1 bg-transparent px-3 text-xs text-white placeholder:text-ink-faint focus:outline-none"
+                    disabled={sendingMessage || Boolean(currentChat?.partner_user && !currentChat.partner_user.is_following)}
+                    className="flex-1 bg-transparent px-2.5 sm:px-3 text-xs sm:text-sm text-white placeholder:text-ink-faint focus:outline-none disabled:opacity-50 min-w-0"
                   />
 
                   {/* Emoji Picker Button & Popover */}
@@ -1747,9 +1993,19 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                   {/* Send / Save Button */}
                   <button
                     type="submit"
-                    disabled={sendingMessage || (!typedMessage.trim() && !pendingAttachment)}
-                    className="w-7 h-7 rounded-lg bg-accent-strong hover:bg-accent disabled:opacity-40 text-white flex items-center justify-center transition-all cursor-pointer shadow-md shadow-accent/20 active:scale-95"
-                    title={editingMessage ? 'Save changes' : 'Send message'}
+                    disabled={
+                      sendingMessage ||
+                      Boolean(currentChat?.partner_user && !currentChat.partner_user.is_following) ||
+                      (!typedMessage.trim() && !pendingAttachment)
+                    }
+                    className="w-7 h-7 rounded-lg bg-accent-strong hover:bg-accent disabled:opacity-40 text-white flex items-center justify-center transition-all cursor-pointer shadow-md shadow-accent/20 active:scale-95 shrink-0"
+                    title={
+                      currentChat?.partner_user && !currentChat.partner_user.is_following
+                        ? `Follow ${currentChat.partner_user.handle} to send messages`
+                        : editingMessage
+                        ? 'Save changes'
+                        : 'Send message'
+                    }
                   >
                     {sendingMessage ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1761,7 +2017,7 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
                   </button>
                 </div>
 
-                <div className="text-center text-[10px] text-ink-faint">
+                <div className="text-center text-[10px] text-ink-faint mt-1 sm:mt-1.5">
                   New messages stay private until you choose to publish them.
                 </div>
               </form>
@@ -1879,10 +2135,13 @@ export function MyChatsPage({ initialChatId, onNavigate, onOpenMenu, onChatCount
             <h4 className="text-xs font-bold text-white">Conversation options</h4>
             <div className="space-y-1.5 text-xs">
               <button
-                onClick={() => showToast('Conversation notifications muted')}
-                className="w-full text-left py-1 text-ink-muted hover:text-white transition-colors cursor-pointer"
+                onClick={() => currentChat && toggleMuteChat(currentChat.id)}
+                className="w-full text-left py-1 text-ink-muted hover:text-white transition-colors cursor-pointer flex items-center justify-between"
               >
-                Mute conversation
+                <span>{currentChat && mutedChatIds.has(currentChat.id) ? 'Unmute conversation' : 'Mute conversation'}</span>
+                {currentChat && mutedChatIds.has(currentChat.id) && (
+                  <BellOff className="w-3.5 h-3.5 text-amber-400" />
+                )}
               </button>
               <button
                 onClick={handleReportChat}

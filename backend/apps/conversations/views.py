@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.throttling import ScopedRateThrottle
+from django.utils import timezone
 from .models import Conversation, Message
 from .serializers import ConversationSerializer, ConversationDetailSerializer, MessageSerializer
 from apps.accounts.models import UserProfile
@@ -32,6 +33,24 @@ class ConversationViewSet(viewsets.ModelViewSet):
             return ConversationDetailSerializer
         return ConversationSerializer
 
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if request.user and request.user.is_authenticated:
+            try:
+                profile = request.user.profile
+                instance.messages.filter(seen_at__isnull=True).exclude(sender=profile).update(seen_at=timezone.now())
+            except Exception:
+                pass
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='mark_read')
+    def mark_read(self, request, pk=None):
+        conversation = self.get_object()
+        current_profile = request.user.profile
+        updated = conversation.messages.filter(seen_at__isnull=True).exclude(sender=current_profile).update(seen_at=timezone.now())
+        return Response({'detail': f'Marked {updated} messages as read', 'unread_count': 0}, status=status.HTTP_200_OK)
+
     def create(self, request, *args, **kwargs):
         current_profile = request.user.profile
         recipient_id = request.data.get('recipient_id')
@@ -46,10 +65,33 @@ class ConversationViewSet(viewsets.ModelViewSet):
         if recipient_id:
             recipient = UserProfile.objects.filter(id=recipient_id).first()
         elif recipient_handle:
-            recipient = UserProfile.objects.filter(handle__iexact=recipient_handle).first()
+            clean = str(recipient_handle).strip()
+            with_at = clean if clean.startswith('@') else f"@{clean}"
+            without_at = clean.lstrip('@')
+            recipient = (
+                UserProfile.objects.filter(handle__iexact=with_at).first()
+                or UserProfile.objects.filter(handle__iexact=without_at).first()
+                or UserProfile.objects.filter(user__username__iexact=without_at).first()
+            )
 
         if not recipient:
-            recipient = UserProfile.objects.exclude(id=current_profile.id).first()
+            return Response(
+                {'detail': 'Recipient not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if recipient.id == current_profile.id:
+            return Response(
+                {'detail': 'You cannot start a chat with yourself.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Enforce rule: You must follow someone to chat with them
+        if not current_profile.following.filter(id=recipient.id).exists():
+            return Response(
+                {'detail': f"You must follow @{recipient.handle.lstrip('@')} to chat with them."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         if not title:
             title = recipient.display_name if recipient else 'New Chat'
@@ -86,6 +128,15 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
         if not conversation.participants.filter(id=current_profile.id).exists():
             raise PermissionDenied("You are not a participant in this conversation.")
+
+        # Enforce rule: You must follow people to chat with them
+        other_participants = conversation.participants.exclude(id=current_profile.id)
+        for other in other_participants:
+            if not current_profile.following.filter(id=other.id).exists():
+                return Response(
+                    {'detail': f"You must follow @{other.handle.lstrip('@')} to chat with them."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
         text = request.data.get('text', '').strip()
         attachment_url = request.data.get('attachment_url', '')

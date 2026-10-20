@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   BarChart3, Users, MessageSquare, Zap, Eye, TrendingUp,
   FileText, Shield, Handshake, RefreshCw, CheckCircle,
-  XCircle, Clock, AlertTriangle, ChevronDown, Menu, X,
+  AlertTriangle, ChevronDown, Menu,
   Hash, Mail, Building2, Star, Info,
 } from 'lucide-react';
 import { cchatApi } from '../services/api';
@@ -94,7 +94,7 @@ function OverviewTab() {
     try {
       const data = await cchatApi.getAdminStats();
       setStats(data);
-    } catch (e) {
+    } catch {
       setError('Could not load stats. Make sure you are logged in as a staff user.');
     } finally {
       setLoading(false);
@@ -215,7 +215,9 @@ function InquiriesTab() {
     try {
       await cchatApi.patchInquiry(id, status);
       setInquiries(prev => prev.map(i => i.id === id ? { ...i, status } : i));
-    } catch { /* ignore */ } finally { setUpdating(null); }
+    } catch {
+      setError('Could not update this inquiry. Please try again.');
+    } finally { setUpdating(null); }
   };
 
   return (
@@ -231,7 +233,7 @@ function InquiriesTab() {
             {/* Row header */}
             <button
               onClick={() => setExpanded(expanded === inq.id ? null : inq.id)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface transition-colors cursor-pointer text-left"
+              className="w-full flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-5 py-4 hover:bg-surface transition-colors cursor-pointer text-left"
             >
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-surface border border-line-2 flex items-center justify-center shrink-0">
@@ -242,7 +244,7 @@ function InquiriesTab() {
                   <div className="text-[11px] text-ink-faint truncate">{inq.name} · {inq.email}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0 ml-3">
+              <div className="flex items-center gap-3 shrink-0 sm:ml-3 self-end sm:self-auto">
                 <StatusBadge status={inq.status} />
                 <span className="text-[10px] text-ink-faint">{new Date(inq.created_at).toLocaleDateString()}</span>
                 <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${expanded === inq.id ? 'rotate-180' : ''}`} />
@@ -252,7 +254,7 @@ function InquiriesTab() {
             {/* Expanded detail */}
             <ExpandableRow expanded={expanded === inq.id}>
               <div className="px-5 pb-5 border-t border-line pt-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
                     <div className="text-ink-faint mb-1 font-medium">Placement Interest</div>
                     <div className="text-ink">{inq.placement_interest}</div>
@@ -323,7 +325,9 @@ function ReportsTab() {
     try {
       await cchatApi.patchReport(id, status);
       setReports(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-    } catch { /* ignore */ } finally { setUpdating(null); }
+    } catch {
+      setError('Could not update this report. Please try again.');
+    } finally { setUpdating(null); }
   };
 
   const REASON_COLORS: Record<string, string> = {
@@ -342,7 +346,7 @@ function ReportsTab() {
           <div key={rep.id} className="rounded-2xl bg-canvas-2 border border-line-2 overflow-hidden">
             <button
               onClick={() => setExpanded(expanded === rep.id ? null : rep.id)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface transition-colors cursor-pointer text-left"
+              className="w-full flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-5 py-4 hover:bg-surface transition-colors cursor-pointer text-left"
             >
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-[#1a1015] border border-[#2d1520] flex items-center justify-center shrink-0">
@@ -355,7 +359,7 @@ function ReportsTab() {
                   <div className="text-[11px] text-ink-faint truncate">by {rep.reporter}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0 ml-3">
+              <div className="flex items-center gap-3 shrink-0 sm:ml-3 self-end sm:self-auto">
                 <StatusBadge status={rep.status} />
                 <span className="text-[10px] text-ink-faint">{new Date(rep.created_at).toLocaleDateString()}</span>
                 <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${expanded === rep.id ? 'rotate-180' : ''}`} />
@@ -423,7 +427,9 @@ function PrivacyTab() {
     try {
       await cchatApi.patchPrivacyRequest(id, status);
       setReqs(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-    } catch { /* ignore */ } finally { setUpdating(null); }
+    } catch {
+      setError('Could not update this privacy request. Please try again.');
+    } finally { setUpdating(null); }
   };
 
   return (
@@ -438,7 +444,7 @@ function PrivacyTab() {
           <div key={req.id} className="rounded-2xl bg-canvas-2 border border-line-2 overflow-hidden">
             <button
               onClick={() => setExpanded(expanded === req.id ? null : req.id)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface transition-colors cursor-pointer text-left"
+              className="w-full flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-5 py-4 hover:bg-surface transition-colors cursor-pointer text-left"
             >
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-9 h-9 rounded-xl bg-[#10182a] border border-[#182845] flex items-center justify-center shrink-0">
@@ -449,7 +455,7 @@ function PrivacyTab() {
                   <div className="text-[11px] text-ink-faint truncate">{req.name || 'Anonymous'} · {req.email}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0 ml-3">
+              <div className="flex items-center gap-3 shrink-0 sm:ml-3 self-end sm:self-auto">
                 <StatusBadge status={req.status} />
                 <span className="text-[10px] text-ink-faint">{new Date(req.created_at).toLocaleDateString()}</span>
                 <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${expanded === req.id ? 'rotate-180' : ''}`} />
@@ -519,7 +525,7 @@ export function AdminDashboardPage({ onNavigate, onOpenMenu }: AdminDashboardPag
             </button>
           )}
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-accent/20 to-violet-500/20 border border-accent/20">
+            <div className="p-1.5 rounded-lg bg-accent/10 border border-accent/20">
               <Star className="w-4 h-4 text-accent" />
             </div>
             <div>
@@ -537,19 +543,19 @@ export function AdminDashboardPage({ onNavigate, onOpenMenu }: AdminDashboardPag
       </header>
 
       {/* ── Tab nav ────────────────────────────────────────────── */}
-      <div className="px-4 sm:px-8 border-b border-line flex items-center gap-1 shrink-0 bg-canvas-deep">
+      <div className="px-2 sm:px-8 border-b border-line flex items-center gap-1 shrink-0 bg-canvas-deep overflow-x-auto no-scrollbar">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-3 py-3.5 text-xs font-semibold relative transition-colors cursor-pointer ${
+            className={`flex shrink-0 whitespace-nowrap items-center gap-2 px-3 py-3.5 text-xs font-semibold relative transition-colors cursor-pointer ${
               tab === id ? 'text-white' : 'text-ink-faint hover:text-ink-soft'
             }`}
           >
             <Icon className="w-3.5 h-3.5" />
             {label}
             {tab === id && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-accent to-violet-500 rounded-t-full" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-t-full" />
             )}
           </button>
         ))}

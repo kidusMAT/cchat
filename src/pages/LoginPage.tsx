@@ -180,9 +180,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-canvas-deep font-sans text-ink">
       <div className="relative hidden w-[45%] flex-col justify-between overflow-hidden border-r border-line bg-canvas p-14 lg:flex">
-        <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-accent/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 -right-20 h-80 w-80 rounded-full bg-indigo-600/10 blur-3xl" />
-
         <div className="flex items-center gap-3">
           <CchatLogo size={36} />
           <span className="text-2xl font-black tracking-tight text-white">CCHAT</span>
