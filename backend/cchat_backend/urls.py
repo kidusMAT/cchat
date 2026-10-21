@@ -26,6 +26,7 @@ from apps.moderation.views import (
     AdminPrivacyRequestsView,
 )
 from apps.sponsorship.views import SubmitInquiryView, AfterHoursDetailView, AdminInquiriesView
+from .health import HealthCheckView
 
 router = DefaultRouter()
 router.register(r'users', UserProfileViewSet, basename='user')
@@ -36,6 +37,7 @@ router.register(r'saved', SavedExcerptViewSet, basename='saved')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/health/', HealthCheckView.as_view(), name='health-check'),
 
     # Auth routes
     path('api/auth/register/', RegisterView.as_view(), name='auth-register'),

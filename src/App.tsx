@@ -45,6 +45,10 @@ import { SponsorshipPage } from './pages/SponsorshipPage';
 import { AfterHoursPage } from './pages/AfterHoursPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { BroadcastBanner } from './components/BroadcastBanner';
+import { ShareModal, ShareData } from './components/ShareModal';
+import { CommandPalette } from './components/CommandPalette';
+import { useToast } from './context/ToastContext';
+import { useShare } from './context/ShareContext';
 import { cchatApi, UserProfile, PublicExcerptItem, TopicItem, SavedExcerptItem, ExcerptMessage, BroadcastConfig } from './services/api';
 import { MyChatsPage } from './pages/MyChatsPage';
 import { LoginPage } from './pages/LoginPage';
@@ -123,9 +127,10 @@ interface SidebarProps {
   onClose?: () => void;
   isMobileDrawer?: boolean;
   chatCount?: number;
+  onOpenCommandPalette?: () => void;
 }
 
-function Sidebar({ activeNav, onNav, currentUser, onLogout, onClose, isMobileDrawer, chatCount }: SidebarProps) {
+function Sidebar({ activeNav, onNav, currentUser, onLogout, onClose, isMobileDrawer, chatCount, onOpenCommandPalette }: SidebarProps) {
   const isStaff = typeof currentUser === 'object' && currentUser !== null && currentUser.is_staff === true;
 
   const navItems = [
@@ -159,7 +164,7 @@ function Sidebar({ activeNav, onNav, currentUser, onLogout, onClose, isMobileDra
 
   return (
     <aside className="w-full shrink-0 flex flex-col justify-between p-4 bg-canvas-deep h-full">
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Logo and optional mobile drawer close button */}
         <div className="flex items-center justify-between px-2 pt-1">
           <button
@@ -181,6 +186,24 @@ function Sidebar({ activeNav, onNav, currentUser, onLogout, onClose, isMobileDra
             </button>
           )}
         </div>
+
+        {/* Command Palette / Quick Search Trigger */}
+        {onOpenCommandPalette && (
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 hover:border-line-strong text-ink-muted hover:text-white text-xs font-medium transition-all cursor-pointer group shadow-xs"
+            title="Quick Spotlight Search (Cmd+K)"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Search className="w-3.5 h-3.5 text-ink-faint group-hover:text-accent transition-colors shrink-0" />
+              <span className="truncate">Search or Jump to...</span>
+            </div>
+            <kbd className="hidden sm:inline-block text-[10px] bg-canvas border border-line px-1.5 py-0.5 rounded text-ink-faint font-mono group-hover:text-ink-soft">
+              ⌘K
+            </kbd>
+          </button>
+        )}
 
         {/* Navigation */}
         <nav className="space-y-1.5">
@@ -569,6 +592,7 @@ function DiscoverPage({
   onOpenMenu?: () => void;
   initialTab?: 'For you' | 'Following' | 'Fresh';
 }) {
+  const { share } = useShare();
   const [activeTab, setActiveTab] = useState<'For you' | 'Following' | 'Fresh'>(initialTab || 'For you');
 
   useEffect(() => {
@@ -1487,8 +1511,13 @@ function DiscoverPage({
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard?.writeText(window.location.href);
-                          alert('Excerpt link copied to clipboard!');
+                          share({
+                            title: story.title,
+                            tag: story.topicTag,
+                            authors: story.authorsSummary,
+                            url: `/discover?excerpt=${story.backendId || story.id}`,
+                            snippet: story.messages?.[0]?.text,
+                          });
                         }}
                         className="p-1.5 sm:p-2 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer shrink-0"
                         title="Share excerpt"
@@ -1524,14 +1553,19 @@ function DiscoverPage({
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard?.writeText(window.location.href);
-                              alert('Chat link copied to clipboard!');
+                              share({
+                                title: story.title,
+                                tag: story.topicTag,
+                                authors: story.authorsSummary,
+                                url: `/discover?excerpt=${story.backendId || story.id}`,
+                                snippet: story.messages?.[0]?.text,
+                              });
                               setActiveStoryOptionsId(null);
                             }}
                             className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-surface text-ink-soft hover:text-white transition-colors cursor-pointer text-left"
                           >
                             <Share2 className="w-4 h-4 text-accent shrink-0" />
-                            <span>Copy link to this chat</span>
+                            <span>Share this excerpt</span>
                           </button>
 
                           <button
@@ -1709,6 +1743,7 @@ function FollowingPage({ onNavigateTab, onNavigate, onOpenMenu }: FollowingPageP
 // VIEW 4: SAVED PAGE (MATCHING FIGMA SCREENSHOT)
 // ─────────────────────────────────────────────────────────────
 function SavedPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, handleOrTopic?: string, extraParam?: any) => void; onOpenMenu?: () => void }) {
+  const { share } = useShare();
   const [activeCollection, setActiveCollection] = useState<string>('All saved');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingCollectionName, setEditingCollectionName] = useState('Plot twists');
@@ -2207,11 +2242,16 @@ function SavedPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, hand
                           type="button"
                           onClick={(ev) => {
                             ev.stopPropagation();
-                            navigator.clipboard?.writeText(`${window.location.origin}/discover`);
-                            showToast('Excerpt link copied to clipboard');
+                            share({
+                              title: e.title,
+                              tag: e.topic?.tag,
+                              authors: e.authors_summary,
+                              url: `/discover?excerpt=${e.id}`,
+                              snippet: e.messages?.[0]?.text,
+                            });
                           }}
                           className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer"
-                          title="Share"
+                          title="Share excerpt"
                         >
                           <Share2 className="w-4 h-4" />
                         </button>
@@ -2976,6 +3016,7 @@ function StartChatPage({
 // VIEW 6: SEARCH PAGE (MATCHING FIGMA SCREENSHOT)
 // ─────────────────────────────────────────────────────────────
 function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, handleOrTopic?: string | number, extraParam?: any) => void; onOpenMenu?: () => void }) {
+  const { share } = useShare();
   const [query, setQuery] = useState('roommate');
   const [activeFilterTab, setActiveFilterTab] = useState<'All' | 'Public chats' | 'People' | 'Topics'>('All');
   const [sortBy, setSortBy] = useState('Most relevant');
@@ -3172,7 +3213,18 @@ function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, han
                 >
                   <Bookmark className="w-4 h-4" />
                 </button>
-                <button className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => share({
+                    title: "he sent a calendar invite for the breakup.",
+                    authors: "@julespark & 1 other",
+                    tag: "#dating",
+                    url: "/discover?topic=dating",
+                    snippet: "we need to talk about our quarterly milestones as a couple.",
+                  })}
+                  className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer"
+                  title="Share excerpt"
+                >
                   <Share2 className="w-4 h-4" />
                 </button>
               </div>
@@ -3268,7 +3320,18 @@ function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, han
                 >
                   <Bookmark className="w-4 h-4" />
                 </button>
-                <button className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => share({
+                    title: "we made a custody schedule for the air fryer.",
+                    authors: "Jules + 2 others",
+                    tag: "#roommates",
+                    url: "/discover?topic=roommates",
+                    snippet: "who gets the ninja dual-zone basket this weekend? I have wings planned.",
+                  })}
+                  className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer"
+                  title="Share excerpt"
+                >
                   <Share2 className="w-4 h-4" />
                 </button>
               </div>
@@ -3950,6 +4013,7 @@ function ProfilePage({
   onUpdateProfile,
   onUpdateUser,
 }: ProfilePageProps) {
+  const { share } = useShare();
   const cleanViewed = viewedHandle?.trim().toLowerCase();
   const cleanCurrent = currentUser?.handle?.trim().toLowerCase();
   const isOwnProfile = !cleanViewed ||
@@ -4734,14 +4798,16 @@ function ProfilePage({
                                 <Bookmark className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => {
-                                  if (navigator.clipboard) {
-                                    navigator.clipboard.writeText(window.location.origin);
-                                    alert('Link copied to clipboard!');
-                                  }
-                                }}
+                                type="button"
+                                onClick={() => share({
+                                  title: card.title || "Public excerpt",
+                                  authors: displayedUser?.display_name || handleDisplay,
+                                  tag: card.tag || "#chat",
+                                  url: `/discover?excerpt=${card.excerptId || card.id}`,
+                                  snippet: card.messages?.[0]?.text,
+                                })}
                                 className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer"
-                                title="Share"
+                                title="Share excerpt"
                               >
                                 <Share2 className="w-4 h-4" />
                               </button>
@@ -6233,6 +6299,8 @@ interface TopicDetailPageProps {
 }
 
 function TopicDetailPage({ topicTag = '#dating', onNavigate, onOpenMenu }: TopicDetailPageProps) {
+  const { share } = useShare();
+  const { showToast } = useToast();
   const [currentTopic, setCurrentTopic] = useState<string>(topicTag);
   const [activeTab, setActiveTab] = useState<'Popular' | 'Fresh'>('Popular');
   const [isFollowing, setIsFollowing] = useState(false);
@@ -6283,6 +6351,7 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate, onOpenMenu }: Topic
   const handleCopy = () => {
     navigator.clipboard?.writeText(window.location.href);
     setCopiedLink(true);
+    showToast('Topic link copied to clipboard!', 'info');
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
@@ -6785,8 +6854,16 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate, onOpenMenu }: Topic
                   <Bookmark className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={handleCopy}
-                  className="p-1.5 text-ink-faint hover:text-ink-soft rounded-lg transition-colors cursor-pointer"
+                  type="button"
+                  onClick={() => share({
+                    title: "the spreadsheet had a 'compatibility score' tab.",
+                    authors: "@maya & 1 other",
+                    tag: currentTopic,
+                    url: `/discover?topic=${encodeURIComponent(currentTopic)}`,
+                    snippet: "he said we should take a more structured approach to early-stage dating.",
+                  })}
+                  className="p-1.5 text-ink-faint hover:text-white rounded-lg transition-colors cursor-pointer"
+                  title="Share excerpt"
                 >
                   <Share2 className="w-4 h-4" />
                 </button>
@@ -6947,8 +7024,16 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate, onOpenMenu }: Topic
                   <Bookmark className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={handleCopy}
-                  className="p-1.5 text-ink-faint hover:text-ink-soft rounded-lg transition-colors cursor-pointer"
+                  type="button"
+                  onClick={() => share({
+                    title: "the apology came with a lasagna.",
+                    authors: "@elena & 1 other",
+                    tag: currentTopic,
+                    url: `/discover?topic=${encodeURIComponent(currentTopic)}`,
+                    snippet: "who drops off a pasta dish as an emotional olive branch without preheating it.",
+                  })}
+                  className="p-1.5 text-ink-faint hover:text-white rounded-lg transition-colors cursor-pointer"
+                  title="Share excerpt"
                 >
                   <Share2 className="w-4 h-4" />
                 </button>
@@ -7210,6 +7295,19 @@ export function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [chatCount, setChatCount] = useState<number>(0);
   const [broadcast, setBroadcast] = useState<BroadcastConfig | null>(null);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);
+
+  // Global Cmd+K / Ctrl+K listener for Command Palette
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const refreshBroadcast = () => {
     cchatApi.getBroadcast()
@@ -7601,6 +7699,7 @@ export function App() {
               onClose={handleCloseMenu}
               isMobileDrawer={true}
               chatCount={chatCount}
+              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
             />
           </div>
         </div>
@@ -7614,6 +7713,7 @@ export function App() {
           currentUser={currentUser}
           onLogout={handleLogout}
           chatCount={chatCount}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
       </div>
 
@@ -7632,6 +7732,17 @@ export function App() {
           <MobileBottomNav activeNav={activeNav} onNav={handleNavAndClose} chatCount={chatCount} />
         </div>
       </div>
+
+      {/* ── Universal Spotlight Command Palette ──────────────────── */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigate={(nav, topicOrHandle) => {
+          handleNavigate(nav, topicOrHandle);
+          setIsCommandPaletteOpen(false);
+        }}
+        isStaff={currentUser?.is_staff === true}
+      />
     </div>
   );
 }
@@ -7641,6 +7752,7 @@ export function App() {
 // VIEW 14: TONIGHT'S PICKS / THE AFTER-HOURS EDIT
 // ─────────────────────────────────────────────────────────────
 function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, topicOrHandle?: string | number, extraParam?: any) => void; onOpenMenu?: () => void }) {
+  const { share } = useShare();
   const [bookmarks, setBookmarks] = useState({ c1: false, c2: false, c3: false });
   const [reactions, setReactions] = useState({
     // Chat 1 messages: JU left, Jules right
@@ -7693,9 +7805,9 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
           <button
             key={type}
             onClick={() => react(rkey, type)}
-            className={`flex items-center gap-1 transition-colors cursor-pointer ${active ? colors[type] + ' font-bold' : 'text-ink-muted hover:text-ink'}`}
+            className={`flex items-center gap-1 transition-all cursor-pointer ${active ? colors[type] + ' font-bold scale-105' : 'text-ink-muted hover:text-ink hover:scale-105'} active:scale-90`}
           >
-            <span>{icons[type]}</span>
+            <span className={active ? 'animate-reaction-pop inline-block' : ''}>{icons[type]}</span>
             <span>{fmt(count)}</span>
           </button>
         );
@@ -7703,7 +7815,19 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
     </div>
   );
 
-  const CardFooter = ({ reads, bk, excerptId = 1 }: { reads: string; bk: 'c1' | 'c2' | 'c3'; excerptId?: number }) => (
+  const CardFooter = ({
+    reads,
+    bk,
+    excerptId = 1,
+    title,
+    snippet,
+  }: {
+    reads: string;
+    bk: 'c1' | 'c2' | 'c3';
+    excerptId?: number;
+    title?: string;
+    snippet?: string;
+  }) => (
     <div className="pt-3 border-t border-line flex items-center justify-between text-[11px]">
       <span className="text-ink-faint">{reads} · Public excerpt · Read & react only</span>
       <div className="flex items-center gap-2">
@@ -7719,10 +7843,21 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
         <button
           onClick={() => setBookmarks(prev => ({ ...prev, [bk]: !prev[bk] }))}
           className={`p-1.5 rounded-lg transition-colors cursor-pointer ${bookmarks[bk] ? 'text-accent' : 'text-ink-faint hover:text-ink-soft'}`}
+          title="Bookmark story"
         >
           <Bookmark className="w-3.5 h-3.5" />
         </button>
-        <button className="p-1.5 text-ink-faint hover:text-ink-soft rounded-lg transition-colors cursor-pointer">
+        <button
+          type="button"
+          onClick={() => share({
+            title: title || "Tonight's featured pick",
+            snippet: snippet || "Read the featured conversation on CCHAT — The Plot is Public",
+            url: `/tonight`,
+            tag: "#tonight",
+          })}
+          className="p-1.5 text-ink-faint hover:text-white hover:bg-surface rounded-lg transition-colors cursor-pointer"
+          title="Share excerpt"
+        >
           <Share2 className="w-3.5 h-3.5" />
         </button>
         <button className="p-1.5 text-ink-faint hover:text-ink-soft rounded-lg transition-colors cursor-pointer">
@@ -7916,7 +8051,13 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
                   </div>
                 </div>
 
-                <CardFooter reads="4.8k reads" bk="c1" excerptId={2} />
+                <CardFooter
+                  reads="4.8k reads"
+                  bk="c1"
+                  excerptId={2}
+                  title="we said one drink."
+                  snippet="we said one drink"
+                />
               </div>
             </div>
 
@@ -7980,7 +8121,13 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
                   </div>
                 </div>
 
-                <CardFooter reads="9.1k reads" bk="c2" excerptId={2} />
+                <CardFooter
+                  reads="9.1k reads"
+                  bk="c2"
+                  excerptId={2}
+                  title="the deck has 94 slides."
+                  snippet="the deck has 94 slides"
+                />
               </div>
             </div>
 
@@ -8044,7 +8191,13 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
                   </div>
                 </div>
 
-                <CardFooter reads="18.4k reads" bk="c3" excerptId={3} />
+                <CardFooter
+                  reads="18.4k reads"
+                  bk="c3"
+                  excerptId={3}
+                  title="he brought a résumé to a first date."
+                  snippet="i brought a résumé to the date."
+                />
               </div>
             </div>
 

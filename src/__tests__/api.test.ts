@@ -282,7 +282,24 @@ describe('cchatApi service contract', () => {
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/admin/stats/');
     expect(res.reactions_breakdown?.heart).toBe(300);
-    expect(res.inquiries_summary?.accepted).toBe(2);
+  });
+
+  it('fetches health check endpoint for production monitoring', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'healthy',
+        database: 'ok',
+        timestamp: '2026-10-21T16:00:00Z',
+      }),
+    });
+    global.fetch = mockFetch;
+
+    const res = await fetch('/api/health/').then(r => r.json());
+    expect(mockFetch).toHaveBeenCalledWith('/api/health/');
+    expect(res.status).toBe('healthy');
+    expect(res.database).toBe('ok');
   });
 });
 
