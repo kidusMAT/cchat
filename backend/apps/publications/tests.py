@@ -115,3 +115,58 @@ class PublicationsSecurityTests(TestCase):
         self.assertEqual(res_unsave.status_code, status.HTTP_200_OK)
         self.assertFalse(res_unsave.data['saved'])
         self.assertFalse(SavedExcerpt.objects.filter(user=self.profile, excerpt=self.excerpt).exists())
+
+    def test_broadcast_endpoints_and_admin_security(self):
+        from apps.publications.models import PlatformBroadcast
+
+        # 1. Anonymous get broadcast when inactive
+        res = self.client.get('/api/broadcast/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data.get('is_active'))
+
+        # 2. Non-staff user cannot access or update admin broadcast
+        self.client.force_authenticate(user=self.user)
+        res_forbidden = self.client.get('/api/admin/broadcast/')
+        self.assertEqual(res_forbidden.status_code, status.HTTP_403_FORBIDDEN)
+
+        res_post_forbidden = self.client.post('/api/admin/broadcast/', {'is_active': True}, format='json')
+        self.assertEqual(res_post_forbidden.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. Staff user can view and update broadcast
+        staff_user = User.objects.create_superuser('admin_staff', 'staff@test.com', 'Pass123!')
+        self.client.force_authenticate(user=staff_user)
+
+        res_admin_get = self.client.get('/api/admin/broadcast/')
+        self.assertEqual(res_admin_get.status_code, status.HTTP_200_OK)
+
+        res_admin_update = self.client.post('/api/admin/broadcast/', {
+            'is_active': True,
+            'badge_text': 'PROMO',
+            'message': 'Tonight exclusive drops are live!',
+            'style_variant': 'emerald',
+            'action_label': 'View Now',
+            'action_url': '/tonight',
+        }, format='json')
+        self.assertEqual(res_admin_update.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_admin_update.data['is_active'])
+        self.assertEqual(res_admin_update.data['badge_text'], 'PROMO')
+
+        # 4. Anonymous can now see active broadcast
+        self.client.logout()
+        res_active = self.client.get('/api/broadcast/')
+        self.assertEqual(res_active.status_code, status.HTTP_200_OK)
+        self.assertTrue(res_active.data['is_active'])
+        self.assertEqual(res_active.data['badge_text'], 'PROMO')
+
+    def test_admin_stats_includes_reactions_and_inquiries(self):
+        staff_user = User.objects.create_superuser('admin_staff_stats', 'stats@test.com', 'Pass123!')
+        self.client.force_authenticate(user=staff_user)
+
+        res = self.client.get('/api/admin/stats/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn('reactions_breakdown', res.data)
+        self.assertIn('inquiries_summary', res.data)
+        self.assertIn('heart', res.data['reactions_breakdown'])
+        self.assertIn('cap', res.data['reactions_breakdown'])
+        self.assertIn('pending', res.data['inquiries_summary'])
+

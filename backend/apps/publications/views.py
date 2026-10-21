@@ -5,8 +5,8 @@ from rest_framework import viewsets, views, status, permissions
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
-from .models import Topic, PublicExcerpt, MessageReaction, SavedExcerpt
-from .serializers import TopicSerializer, PublicExcerptSerializer, SavedExcerptSerializer
+from .models import Topic, PublicExcerpt, MessageReaction, SavedExcerpt, PlatformBroadcast
+from .serializers import TopicSerializer, PublicExcerptSerializer, SavedExcerptSerializer, PlatformBroadcastSerializer
 from apps.accounts.models import UserProfile
 from apps.conversations.models import Message
 
@@ -201,3 +201,15 @@ class SavedExcerptViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user.profile)
+
+
+class BroadcastView(views.APIView):
+    """Public endpoint to fetch current active broadcast banner."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        broadcast = PlatformBroadcast.objects.filter(is_active=True).first()
+        if not broadcast:
+            return Response({'is_active': False})
+        return Response(PlatformBroadcastSerializer(broadcast).data)
+

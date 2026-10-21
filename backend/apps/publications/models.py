@@ -77,3 +77,28 @@ class ExcerptSection(models.Model):
     def __str__(self):
         return f"{self.excerpt.title} - {self.header} ({self.topic_tag})"
 
+
+class PlatformBroadcast(models.Model):
+    STYLE_CHOICES = [
+        ('violet', 'Neon Violet'),
+        ('cyan', 'Electric Cyan'),
+        ('amber', 'Sunset Ember'),
+        ('emerald', 'Emerald Green'),
+    ]
+
+    is_active = models.BooleanField(default=False)
+    badge_text = models.CharField(max_length=50, default='ANNOUNCEMENT')
+    message = models.CharField(max_length=300, default='Welcome to CCHAT — The Plot is Public!')
+    style_variant = models.CharField(max_length=30, choices=STYLE_CHOICES, default='violet')
+    action_label = models.CharField(max_length=50, blank=True, default="Explore Tonight's Picks")
+    action_url = models.CharField(max_length=200, blank=True, default='/tonight')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        status = 'ACTIVE' if self.is_active else 'INACTIVE'
+        return f"Broadcast [{status}]: {self.message[:30]}"
+
+

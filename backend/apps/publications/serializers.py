@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Topic, PublicExcerpt, MessageReaction, SavedExcerpt, ExcerptSection
+from .models import Topic, PublicExcerpt, MessageReaction, SavedExcerpt, ExcerptSection, PlatformBroadcast
 from apps.conversations.models import Message
 from apps.accounts.models import UserProfile
 
@@ -188,3 +188,13 @@ class SavedExcerptSerializer(serializers.ModelSerializer):
     class Meta:
         model = SavedExcerpt
         fields = ['id', 'excerpt', 'collection_name', 'created_at']
+
+
+class PlatformBroadcastSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlatformBroadcast
+        fields = [
+            'id', 'is_active', 'badge_text', 'message',
+            'style_variant', 'action_label', 'action_url', 'updated_at'
+        ]
+

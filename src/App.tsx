@@ -44,7 +44,8 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import { SponsorshipPage } from './pages/SponsorshipPage';
 import { AfterHoursPage } from './pages/AfterHoursPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
-import { cchatApi, UserProfile, PublicExcerptItem, TopicItem, SavedExcerptItem, ExcerptMessage } from './services/api';
+import { BroadcastBanner } from './components/BroadcastBanner';
+import { cchatApi, UserProfile, PublicExcerptItem, TopicItem, SavedExcerptItem, ExcerptMessage, BroadcastConfig } from './services/api';
 import { MyChatsPage } from './pages/MyChatsPage';
 import { LoginPage } from './pages/LoginPage';
 import { UserAvatar } from './components/UserAvatar';
@@ -7208,6 +7209,20 @@ export function App() {
   });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [chatCount, setChatCount] = useState<number>(0);
+  const [broadcast, setBroadcast] = useState<BroadcastConfig | null>(null);
+
+  const refreshBroadcast = () => {
+    cchatApi.getBroadcast()
+      .then(b => {
+        if (b && b.is_active) setBroadcast(b);
+        else setBroadcast(null);
+      })
+      .catch(() => {});
+  };
+
+  React.useEffect(() => {
+    refreshBroadcast();
+  }, [activeNav]);
 
   const refreshChatCount = () => {
     if (isLoggedIn) {
@@ -7604,6 +7619,9 @@ export function App() {
 
       {/* ── Main content area ───────────────────────────────────── */}
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+        {/* Live Broadcast Banner */}
+        <BroadcastBanner broadcast={broadcast} onNavigate={handleNavigate} />
+
         {/* Page content */}
         <div className="flex-1 flex min-h-0 overflow-hidden">
           {renderContent()}

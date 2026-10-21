@@ -147,6 +147,18 @@ export interface AfterHoursDetail {
   tracks: Array<{ title: string; description: string }>;
 }
 
+export interface BroadcastConfig {
+  id?: number;
+  is_active: boolean;
+  badge_text: string;
+  message: string;
+  style_variant: 'violet' | 'cyan' | 'amber' | 'emerald';
+  action_label: string;
+  action_url: string;
+  updated_at?: string;
+}
+
+
 // Token helper methods
 const TOKEN_KEY = 'cchat_auth_token';
 
@@ -566,6 +578,13 @@ export const cchatApi = {
     return res.json();
   },
 
+  // Broadcast
+  async getBroadcast(): Promise<BroadcastConfig> {
+    const res = await apiFetch('/broadcast/');
+    if (!res.ok) return { is_active: false, badge_text: '', message: '', style_variant: 'violet', action_label: '', action_url: '' };
+    return res.json();
+  },
+
   // ── Admin-only API ────────────────────────────────────────────
   async getAdminStats(): Promise<{
     total_users: number;
@@ -574,9 +593,37 @@ export const cchatApi = {
     total_reads: number;
     total_topics: number;
     new_this_week: number;
+    reactions_breakdown?: {
+      heart: number;
+      cap: number;
+      skull: number;
+      fire: number;
+    };
+    inquiries_summary?: {
+      total: number;
+      pending: number;
+      reviewed: number;
+      accepted: number;
+      rejected: number;
+    };
   }> {
     const res = await apiFetch('/admin/stats/');
     if (!res.ok) throw new Error('Failed to load admin stats');
+    return res.json();
+  },
+
+  async getAdminBroadcast(): Promise<BroadcastConfig> {
+    const res = await apiFetch('/admin/broadcast/');
+    if (!res.ok) throw new Error('Failed to load broadcast config');
+    return res.json();
+  },
+
+  async updateAdminBroadcast(data: Partial<BroadcastConfig>): Promise<BroadcastConfig> {
+    const res = await apiFetch('/admin/broadcast/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update broadcast config');
     return res.json();
   },
 

@@ -16,8 +16,9 @@ from apps.publications.views import (
     TopicViewSet,
     SavedExcerptViewSet,
     react_message,
+    BroadcastView,
 )
-from apps.publications.admin_views import AdminStatsView
+from apps.publications.admin_views import AdminStatsView, AdminBroadcastView
 from apps.moderation.views import (
     SubmitReportView,
     SubmitPrivacyRequestView,
@@ -55,7 +56,11 @@ urlpatterns = [
     path('api/sponsorship/inquiry/', SubmitInquiryView.as_view(), name='submit-inquiry'),
     path('api/sponsorship/after-hours/', AfterHoursDetailView.as_view(), name='after-hours-detail'),
 
+    # Broadcast Announcement
+    path('api/broadcast/', BroadcastView.as_view(), name='broadcast'),
+
     # ── Admin-only endpoints ────────────────────────────────────────
+    path('api/admin/broadcast/', AdminBroadcastView.as_view(), name='admin-broadcast'),
     path('api/admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
     path('api/admin/reports/', AdminReportsView.as_view(), name='admin-reports'),
     path('api/admin/reports/<int:report_id>/', AdminReportsView.as_view(), name='admin-report-detail'),

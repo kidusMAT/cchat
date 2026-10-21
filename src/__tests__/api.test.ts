@@ -200,5 +200,90 @@ describe('cchatApi service contract', () => {
     expect(JSON.parse(options.body)).toEqual({ unpublish_all: true });
     expect(res.detail).toBe('Publication removed');
   });
+
+  it('fetches broadcast configuration', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        is_active: true,
+        badge_text: 'HOT',
+        message: 'Breaking conversation published!',
+        style_variant: 'violet',
+        action_label: 'Read Now',
+        action_url: '/tonight',
+      }),
+    });
+    global.fetch = mockFetch;
+
+    const res = await cchatApi.getBroadcast();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/broadcast/');
+    expect(res.is_active).toBe(true);
+    expect(res.badge_text).toBe('HOT');
+  });
+
+  it('updates admin broadcast configuration', async () => {
+    authStorage.setToken('admin-token');
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 1,
+        is_active: true,
+        badge_text: 'SPONSOR',
+        message: 'After Hours special drops at midnight',
+        style_variant: 'amber',
+        action_label: 'Check Deals',
+        action_url: '/after-hours',
+      }),
+    });
+    global.fetch = mockFetch;
+
+    const payload = {
+      is_active: true,
+      badge_text: 'SPONSOR',
+      message: 'After Hours special drops at midnight',
+      style_variant: 'amber' as const,
+      action_label: 'Check Deals',
+      action_url: '/after-hours',
+    };
+
+    const res = await cchatApi.updateAdminBroadcast(payload);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/admin/broadcast/');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual(payload);
+    expect(res.badge_text).toBe('SPONSOR');
+  });
+
+  it('fetches admin stats with reaction culture breakdown', async () => {
+    authStorage.setToken('admin-token');
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        total_users: 150,
+        total_public_chats: 40,
+        total_reactions: 890,
+        total_reads: 5400,
+        total_topics: 12,
+        new_this_week: 5,
+        reactions_breakdown: { heart: 300, cap: 250, skull: 200, fire: 140 },
+        inquiries_summary: { total: 8, pending: 3, reviewed: 2, accepted: 2, rejected: 1 },
+      }),
+    });
+    global.fetch = mockFetch;
+
+    const res = await cchatApi.getAdminStats();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/admin/stats/');
+    expect(res.reactions_breakdown?.heart).toBe(300);
+    expect(res.inquiries_summary?.accepted).toBe(2);
+  });
 });
+
 
