@@ -18,8 +18,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Collect static files into STATIC_ROOT using WhiteNoise
-RUN DJANGO_DEBUG=False DJANGO_SECRET_KEY=build-time-secret-key python manage.py collectstatic --noinput || true
+# Collect static files into STATIC_ROOT using WhiteNoise.  A failure here must
+# fail the image build rather than silently producing an incomplete release.
+RUN DJANGO_DEBUG=False \
+    DJANGO_SECRET_KEY=build-time-secret-key-that-is-long-and-unique-for-static-build-only \
+    DJANGO_ALLOWED_HOSTS=localhost \
+    python manage.py collectstatic --noinput
 
 EXPOSE 8000
 

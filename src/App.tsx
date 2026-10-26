@@ -50,6 +50,7 @@ import { LoginPage } from './pages/LoginPage';
 import { UserAvatar } from './components/UserAvatar';
 import { CchatLogo } from './components/CchatLogo';
 import { FooterLinks } from './components/FooterLinks';
+import { GlobalSearchBar } from './components/GlobalSearchBar';
 
 // Shared double chat-bubble logo icon
 // Mobile bottom navigation bar matching Figma dock
@@ -1147,23 +1148,7 @@ function DiscoverPage({
             </button>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            <button
-              onClick={() => onNavigate?.('Search')}
-              className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-              title="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <div className="relative w-48 sm:w-64 md:w-80 hidden sm:block">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search chats, people, plot twists"
-                onClick={() => onNavigate?.('Search')}
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors cursor-pointer"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
+<GlobalSearchBar onNavigate={onNavigate} />
             <button
               onClick={() => onNavigate?.('Notifications')}
               className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative"
@@ -2621,22 +2606,7 @@ function StartChatPage({
           <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Start a chat</h2>
         </div>
         <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-          <button
-            onClick={() => onNavigate && onNavigate('Search')}
-            className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-            title="Search"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-          <div className="relative w-48 sm:w-64 md:w-80 hidden sm:block">
-            <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search chats, people, plot twists"
-              className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors"
-            />
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-          </div>
+<GlobalSearchBar onNavigate={onNavigate} />
           <button className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative">
             <Bell className="w-4 h-4" />
           </button>
@@ -2974,12 +2944,53 @@ function StartChatPage({
 // ─────────────────────────────────────────────────────────────
 // VIEW 6: SEARCH PAGE (MATCHING FIGMA SCREENSHOT)
 // ─────────────────────────────────────────────────────────────
-function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, handleOrTopic?: string | number, extraParam?: any) => void; onOpenMenu?: () => void }) {
-  const [query, setQuery] = useState('roommate');
+function SearchPage({ onNavigate, onOpenMenu, initialQuery = '' }: { onNavigate?: (nav: string, handleOrTopic?: any, extraParam?: any) => void; onOpenMenu?: () => void; initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery || 'roommate');
+  const [prevInitialQuery, setPrevInitialQuery] = useState(initialQuery);
   const [activeFilterTab, setActiveFilterTab] = useState<'All' | 'Public chats' | 'People' | 'Topics'>('All');
   const [sortBy, setSortBy] = useState('Most relevant');
-  const [publishedFilter, setPublishedFilter] = useState('Any time');
-  const [topicFilter, setTopicFilter] = useState('All topics');
+
+  const [searchResults, setSearchResults] = useState<{
+    excerpts: PublicExcerptItem[];
+    people: UserProfile[];
+    topics: Array<{ id: number; tag: string; name: string; chats_count: number }>;
+    total: number;
+  }>({ excerpts: [], people: [], topics: [], total: 0 });
+  const [searching, setSearching] = useState(false);
+
+  if (initialQuery !== prevInitialQuery) {
+    setPrevInitialQuery(initialQuery);
+    setQuery(initialQuery);
+  }
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        setSearching(true);
+        const data = await cchatApi.unifiedSearch(trimmed);
+        if (active) {
+          setSearchResults(data);
+        }
+      } catch (err) {
+        console.warn('SearchPage error:', err);
+      } finally {
+        if (active) {
+          setSearching(false);
+        }
+      }
+    }, 200);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  const activeSearchResults = query.trim() ? searchResults : { excerpts: [], people: [], topics: [], total: 0 };
 
   const [savedCards, setSavedCards] = useState<{ [key: string]: boolean }>({
     c1: false,
@@ -3006,19 +3017,17 @@ function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, han
     }
   };
 
-  const recentSearches = ['roommate', '@mayamaybe', 'first date'];
-
   return (
     <div className="flex-1 flex h-full min-w-0">
       {/* Center Main Feed */}
       <div className="flex-1 flex flex-col border-r border-line min-w-0 bg-canvas-deep">
         {/* Top Header */}
-        <header className="h-16 px-4 sm:px-6 md:px-8 border-b border-line flex items-center justify-between shrink-0 bg-canvas-deep/90 backdrop-blur-md sticky top-0 z-10">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="h-16 px-3.5 sm:px-6 md:px-8 border-b border-line flex items-center justify-between shrink-0 bg-canvas-deep/90 backdrop-blur-md sticky top-0 z-10 gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             {onOpenMenu && (
               <button
                 onClick={onOpenMenu}
-                className="md:hidden p-1.5 -ml-1 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer"
+                className="md:hidden p-1.5 -ml-1 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer shrink-0"
                 aria-label="Open menu"
               >
                 <Menu className="w-5 h-5" />
@@ -3026,51 +3035,53 @@ function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, han
             )}
             <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Search</h2>
           </div>
-          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-            <div className="relative w-48 sm:w-64 md:w-80">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
-            <button className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative">
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            <GlobalSearchBar onNavigate={onNavigate} initialQuery={query} />
+            <button className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative shrink-0">
               <Bell className="w-4 h-4" />
             </button>
           </div>
         </header>
 
-        {/* Scrollable Center Content */}
-        <div className="flex-1 px-4 sm:px-6 md:px-8 py-5 pb-20 md:pb-5 overflow-y-auto space-y-6">
+        {/* Scrollable Center Content with full responsive width & no horizontal overflow */}
+        <div className="flex-1 px-3 sm:px-6 md:px-8 py-4 sm:py-6 pb-24 md:pb-6 overflow-y-auto overflow-x-hidden min-w-0 w-full space-y-5 sm:space-y-6 max-w-full">
           {/* Section Hero */}
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 font-mono">PUBLIC SEARCH</span>
-            <h1 className="text-3xl font-black text-white tracking-tight mt-1.5 leading-tight">Find your next plot twist.</h1>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-accent font-mono">PUBLIC SEARCH</span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mt-1 leading-snug">Find your next plot twist.</h1>
           </div>
 
           {/* Search Input Box */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <label className="text-[11px] font-semibold text-ink-muted">Search chats, people and topics</label>
-            <input
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              className="w-full bg-canvas-2 border border-line-2 focus:border-accent rounded-2xl px-4 py-3 text-xs text-white focus:outline-none transition-colors"
-            />
-            <div className="text-[11px] text-ink-faint pt-1">18 public chats · 2 people · 1 topic</div>
+            <div className="relative">
+              <input
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Type keywords, @handle, or #topic"
+                className="w-full bg-canvas-2 border border-line-2 focus:border-accent rounded-2xl px-4 py-2.5 sm:py-3 text-xs text-white focus:outline-none transition-colors"
+              />
+              {searching && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <Loader2 className="w-4 h-4 text-accent animate-spin" />
+                </div>
+              )}
+            </div>
+            <div className="text-[11px] text-ink-faint pt-0.5 truncate">
+              {searching
+                ? 'Searching...'
+                : `${activeSearchResults.excerpts.length} public chats · ${activeSearchResults.people.length} people · ${activeSearchResults.topics.length} topics`}
+            </div>
           </div>
 
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-6 border-b border-line pb-2 text-xs font-bold">
+          {/* Filter Tabs (Horizontal scroll on mobile to prevent squashing) */}
+          <div className="flex items-center gap-4 sm:gap-6 border-b border-line pb-2 text-xs font-bold overflow-x-auto no-scrollbar flex-nowrap scroll-smooth min-w-0">
             {(['All', 'Public chats', 'People', 'Topics'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveFilterTab(tab)}
-                className={`transition-colors cursor-pointer pb-2 relative ${
+                className={`transition-colors cursor-pointer pb-2 relative whitespace-nowrap shrink-0 ${
                   activeFilterTab === tab ? 'text-white' : 'text-ink-faint hover:text-ink-soft'
                 }`}
               >
@@ -3082,246 +3093,349 @@ function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, han
             ))}
           </div>
 
-          {/* Topic Match Card */}
-          <div className="p-5 rounded-3xl bg-canvas-2 border border-line-2 space-y-2 shadow-xl">
-            <div className="text-[10px] font-semibold text-ink-faint uppercase tracking-wider">Topic match</div>
-            <h3 className="text-base font-extrabold text-accent">#roommatelore</h3>
-            <p className="text-xs text-ink-muted">Shared rent. Unshared brain cell. · 1.4k public chats</p>
-          </div>
-
-          {/* Story Card 1: "the rent is due. the raccoon is not on the lease." */}
-          <article className="rounded-3xl bg-canvas-2 border border-line-2 p-6 shadow-xl space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <img
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
-                  alt="Maya"
-                  className="w-10 h-10 rounded-full object-cover border border-line-strong"
-                />
-                <div>
-                  <h3
-                    onClick={() => onNavigate?.('Discover', 1)}
-                    className="text-lg font-extrabold text-white tracking-tight hover:text-accent cursor-pointer transition-colors"
-                    title="Read full chat in Discover"
-                  >
-                    the rent is due. the raccoon is not on the lease.
-                  </h3>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-ink-faint">
-                    <span className="font-semibold text-ink-muted">@mayamaybe</span>
-                    <span>×</span>
-                    <span className="text-ink-muted">Anonymous</span>
-                    <span>·</span>
-                    <span>18m ago</span>
-                    <span>·</span>
-                    <span className="text-ink-muted font-medium">#roommatelore</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Messages */}
-            <div className="space-y-4 py-1">
-              {/* Msg 1 — Anonymous */}
-              <div className="space-y-1">
-                <div className="text-[11px] text-ink-muted font-semibold">Anonymous</div>
-                <div className="rounded-2xl rounded-tl-sm px-5 py-3.5 bg-[#172d4b] border border-[#214373] text-ink text-sm font-medium w-[68%]">
-                  who adopted a raccoon
-                </div>
-                <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pl-1 pt-0.5">
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">♥ 124</span>
-                  <span className="flex items-center gap-1 text-accent font-bold">🧢 1.2k</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 486</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 82</span>
-                </div>
-              </div>
-
-              {/* Msg 2 — Maya */}
-              <div className="space-y-1 flex flex-col items-end">
-                <div className="text-[11px] text-ink-muted font-semibold pr-1">Maya</div>
-                <div className="rounded-2xl rounded-tr-sm px-5 py-3.5 bg-[#421d33] border border-[#5d2a49] text-rose-50 text-sm font-medium w-[68%]">
-                  nobody adopted him. he chose us.
-                </div>
-                <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pr-1 pt-0.5">
-                  <span className="flex items-center gap-1 text-rose-400 font-bold">♥ 842</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🧢 41</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 495</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 91</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card Footer */}
-            <div className="pt-3 border-t border-line flex items-center justify-between text-xs text-ink-faint">
-              <span>6.2k reads · Public excerpt · Read & react only</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onNavigate?.('Discover', 1)}
-                  className="px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-2 text-ink-soft hover:text-white text-xs font-semibold border border-line-2 transition-colors cursor-pointer flex items-center gap-1"
-                  title="Open full chat in Discover"
-                >
-                  <span>Read chat</span>
-                  <ArrowRight className="w-3 h-3 text-accent" />
-                </button>
-                <button
-                  onClick={() => toggleSave('c1')}
-                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                    savedCards.c1 ? 'text-accent bg-accent/10' : 'text-ink-muted hover:text-white hover:bg-surface'
-                  }`}
-                >
-                  <Bookmark className="w-4 h-4" />
-                </button>
-                <button className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer">
-                  <Share2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </article>
-
-          {/* Story Card 2: "we made a custody schedule for the air fryer." */}
-          <article className="rounded-3xl bg-canvas-2 border border-line-2 p-6 shadow-xl space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
+          {/* Dynamic Topic Matches */}
+          {(activeFilterTab === 'All' || activeFilterTab === 'Topics') && activeSearchResults.topics.length > 0 && (
+            <div className="space-y-3 min-w-0">
+              {activeSearchResults.topics.map(t => (
                 <div
-                  onClick={() => onNavigate?.('Profile', '@julespark')}
-                  className="w-10 h-10 rounded-2xl bg-surface border border-line-2 hover:border-accent flex items-center justify-center font-bold text-xs text-ink-soft cursor-pointer transition-colors"
+                  key={t.id}
+                  onClick={() => onNavigate?.('Topic detail', t.tag)}
+                  className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-canvas-2 border border-line-2 hover:border-accent space-y-1.5 sm:space-y-2 shadow-xl cursor-pointer transition-colors group min-w-0 overflow-hidden"
                 >
-                  JU
+                  <div className="text-[10px] font-semibold text-ink-faint uppercase tracking-wider">Topic match</div>
+                  <h3 className="text-base font-extrabold text-accent group-hover:text-accent-bright truncate">{t.tag}</h3>
+                  <p className="text-xs text-ink-muted truncate">{t.name ? `${t.name} · ` : ''}{t.chats_count} public chats</p>
                 </div>
-                <div>
-                  <h3
-                    onClick={() => onNavigate?.('Discover', 1)}
-                    className="text-lg font-extrabold text-white tracking-tight hover:text-accent cursor-pointer transition-colors"
-                    title="Read full chat in Discover"
-                  >
-                    we made a custody schedule for the air fryer.
-                  </h3>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-ink-faint">
+              ))}
+            </div>
+          )}
+
+          {/* Dynamic People Matches */}
+          {(activeFilterTab === 'All' || activeFilterTab === 'People') && activeSearchResults.people.length > 0 && (
+            <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-canvas-2 border border-line-2 space-y-3.5 shadow-xl min-w-0 overflow-hidden">
+              <h4 className="text-sm font-extrabold text-white">People · public profiles</h4>
+              <div className="space-y-3">
+                {activeSearchResults.people.map(person => (
+                  <div key={person.id} className="flex items-center justify-between gap-2 min-w-0">
+                    <div
+                      className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group min-w-0 flex-1"
+                      onClick={() => onNavigate?.('Profile', person.handle)}
+                    >
+                      {person.avatar_url ? (
+                        <img src={person.avatar_url} alt={person.display_name} className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover border border-line-strong shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-surface border border-line-strong group-hover:border-accent flex items-center justify-center font-bold text-xs text-ink-soft transition-colors shrink-0">
+                          {person.display_name?.slice(0, 2).toUpperCase() || 'U'}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-white group-hover:text-accent transition-colors truncate">{person.display_name}</div>
+                        <div className="text-[10px] text-ink-faint truncate">{person.handle}{person.bio ? ` · ${person.bio}` : ''}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => toggleFollow(person.handle, person.handle)}
+                      className="text-xs font-semibold text-accent hover:text-accent-bright cursor-pointer shrink-0 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-2 transition-colors border border-line-2"
+                    >
+                      {followedPeople[person.handle] || person.is_following ? 'Following' : 'Follow'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Dynamic Public Chats Matches */}
+          {(activeFilterTab === 'All' || activeFilterTab === 'Public chats') && activeSearchResults.excerpts.length > 0 && (
+            <div className="space-y-4 min-w-0">
+              {activeSearchResults.excerpts.map(excerpt => (
+                <article key={excerpt.id} className="rounded-2xl sm:rounded-3xl bg-canvas-2 border border-line-2 p-4 sm:p-5 md:p-6 shadow-xl space-y-3 sm:space-y-4 min-w-0 overflow-hidden">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-accent/20 text-accent flex items-center justify-center font-bold text-xs sm:text-sm shrink-0 mt-0.5">
+                        {excerpt.authors_summary?.slice(0, 2).toUpperCase() || 'CC'}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          onClick={() => onNavigate?.('Discover', excerpt.id)}
+                          className="text-base sm:text-lg font-extrabold text-white tracking-tight hover:text-accent cursor-pointer transition-colors break-words leading-snug line-clamp-2"
+                          title="Read full chat in Discover"
+                        >
+                          {excerpt.title}
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] sm:text-xs text-ink-faint">
+                          <span className="font-semibold text-ink-muted truncate max-w-[130px]">{excerpt.authors_summary}</span>
+                          {excerpt.topic?.tag && (
+                            <>
+                              <span>·</span>
+                              <span className="text-accent font-medium truncate max-w-[120px]">{excerpt.topic.tag}</span>
+                            </>
+                          )}
+                          <span>·</span>
+                          <span className="shrink-0">{excerpt.reads_count || 0} reads</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Message previews */}
+                  {excerpt.messages && excerpt.messages.length > 0 && (
+                    <div className="space-y-2 py-1 min-w-0">
+                      {excerpt.messages.slice(0, 2).map((msg: any, i: number) => (
+                        <div key={msg.id} className={`flex flex-col ${i % 2 === 1 ? 'items-end' : 'items-start'} min-w-0`}>
+                          <div className="text-[10px] text-ink-faint mb-0.5 px-1 truncate max-w-full">
+                            {msg.sender_display || (msg.is_anonymous ? 'Anonymous' : 'Speaker')}
+                          </div>
+                          <div className="rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 bg-surface border border-line-2 text-ink text-xs max-w-[88%] sm:max-w-[78%] break-words">
+                            {msg.text}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="pt-2.5 border-t border-line flex items-center justify-between text-xs text-ink-faint gap-2">
+                    <span className="truncate text-[11px] sm:text-xs">Public excerpt · Read & react</span>
                     <button
                       type="button"
-                      onClick={() => onNavigate?.('Profile', '@julespark')}
-                      className="font-semibold text-ink-muted hover:text-white transition-colors cursor-pointer"
+                      onClick={() => onNavigate?.('Discover', excerpt.id)}
+                      className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-2 text-accent hover:text-white text-xs font-semibold border border-line-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
                     >
-                      @julespark
+                      <span>Read chat</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-accent" />
                     </button>
-                    <span>×</span>
-                    <span className="text-ink-muted">Anonymous</span>
-                    <span>·</span>
-                    <span>1m ago</span>
-                    <span>·</span>
-                    <span className="text-ink-muted font-medium">#roommatelore</span>
                   </div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {/* Curated Fallback Stories: ONLY shown when there are 0 dynamic excerpts */}
+          {activeSearchResults.excerpts.length === 0 && (
+            <div className="space-y-4 min-w-0">
+              {/* Topic Match Card */}
+              {(activeFilterTab === 'All' || activeFilterTab === 'Topics') && (query.toLowerCase().includes('roommate') || !query.trim()) && (
+                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-canvas-2 border border-line-2 space-y-1.5 sm:space-y-2 shadow-xl min-w-0 overflow-hidden">
+                  <div className="text-[10px] font-semibold text-ink-faint uppercase tracking-wider">Topic match</div>
+                  <h3 className="text-base font-extrabold text-accent truncate">#roommatelore</h3>
+                  <p className="text-xs text-ink-muted truncate">Shared rent. Unshared brain cell. · 1.4k public chats</p>
+                </div>
+              )}
+
+              {/* Story Card 1 */}
+              {(activeFilterTab === 'All' || activeFilterTab === 'Public chats') && (
+                <article className="rounded-2xl sm:rounded-3xl bg-canvas-2 border border-line-2 p-4 sm:p-5 md:p-6 shadow-xl space-y-3 sm:space-y-4 min-w-0 overflow-hidden">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+                      <img
+                        src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
+                        alt="Maya"
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-line-strong shrink-0 mt-0.5"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          onClick={() => onNavigate?.('Discover', 1)}
+                          className="text-base sm:text-lg font-extrabold text-white tracking-tight hover:text-accent cursor-pointer transition-colors break-words leading-snug line-clamp-2"
+                          title="Read full chat in Discover"
+                        >
+                          the rent is due. the raccoon is not on the lease.
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] sm:text-xs text-ink-faint">
+                          <span className="font-semibold text-ink-muted">@mayamaybe</span>
+                          <span>×</span>
+                          <span className="text-ink-muted">Anonymous</span>
+                          <span>·</span>
+                          <span>18m ago</span>
+                          <span>·</span>
+                          <span className="text-ink-muted font-medium">#roommatelore</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 py-1 min-w-0">
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-ink-muted font-semibold px-1">Anonymous</div>
+                      <div className="rounded-2xl rounded-tl-sm px-4 py-2.5 bg-[#172d4b] border border-[#214373] text-ink text-xs sm:text-sm font-medium max-w-[88%] sm:max-w-[75%] break-words">
+                        who adopted a raccoon
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pl-1 pt-0.5 flex-wrap">
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">♥ 124</span>
+                        <span className="flex items-center gap-1 text-accent font-bold">🧢 1.2k</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 486</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 82</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 flex flex-col items-end">
+                      <div className="text-[11px] text-ink-muted font-semibold pr-1">Maya</div>
+                      <div className="rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#421d33] border border-[#5d2a49] text-rose-50 text-xs sm:text-sm font-medium max-w-[88%] sm:max-w-[75%] break-words">
+                        nobody adopted him. he chose us.
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pr-1 pt-0.5 flex-wrap">
+                        <span className="flex items-center gap-1 text-rose-400 font-bold">♥ 842</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🧢 41</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 495</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 91</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-line flex items-center justify-between text-xs text-ink-faint gap-2">
+                    <span className="truncate text-[11px] sm:text-xs">6.2k reads · Public excerpt</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.('Discover', 1)}
+                        className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-2 text-ink-soft hover:text-white text-xs font-semibold border border-line-2 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <span>Read chat</span>
+                        <ArrowRight className="w-3 h-3 text-accent" />
+                      </button>
+                      <button
+                        onClick={() => toggleSave('c1')}
+                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          savedCards.c1 ? 'text-accent bg-accent/10' : 'text-ink-muted hover:text-white hover:bg-surface'
+                        }`}
+                      >
+                        <Bookmark className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              )}
+
+              {/* Story Card 2 */}
+              {(activeFilterTab === 'All' || activeFilterTab === 'Public chats') && (
+                <article className="rounded-2xl sm:rounded-3xl bg-canvas-2 border border-line-2 p-4 sm:p-5 md:p-6 shadow-xl space-y-3 sm:space-y-4 min-w-0 overflow-hidden">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+                      <div
+                        onClick={() => onNavigate?.('Profile', '@julespark')}
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-surface border border-line-2 hover:border-accent flex items-center justify-center font-bold text-xs text-ink-soft cursor-pointer transition-colors shrink-0 mt-0.5"
+                      >
+                        JU
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          onClick={() => onNavigate?.('Discover', 1)}
+                          className="text-base sm:text-lg font-extrabold text-white tracking-tight hover:text-accent cursor-pointer transition-colors break-words leading-snug line-clamp-2"
+                        >
+                          we made a custody schedule for the air fryer.
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] sm:text-xs text-ink-faint">
+                          <button
+                            type="button"
+                            onClick={() => onNavigate?.('Profile', '@julespark')}
+                            className="font-semibold text-ink-muted hover:text-white transition-colors cursor-pointer truncate max-w-[120px]"
+                          >
+                            @julespark
+                          </button>
+                          <span>×</span>
+                          <span className="text-ink-muted">Anonymous</span>
+                          <span>·</span>
+                          <span>1m ago</span>
+                          <span>·</span>
+                          <span className="text-ink-muted font-medium">#roommatelore</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 py-1 min-w-0">
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-ink-muted font-semibold px-1">Anonymous</div>
+                      <div className="rounded-2xl rounded-tl-sm px-4 py-2.5 bg-[#172d4b] border border-[#214373] text-ink text-xs sm:text-sm font-medium max-w-[88%] sm:max-w-[75%] break-words">
+                        i need the air fryer on thursday
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pl-1 pt-0.5 flex-wrap">
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">♥ 124</span>
+                        <span className="flex items-center gap-1 text-accent font-bold">🧢 1.2k</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 486</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 82</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 flex flex-col items-end">
+                      <div className="text-[11px] text-ink-muted font-semibold pr-1">Jules</div>
+                      <div className="rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#421d33] border border-[#5d2a49] text-rose-50 text-xs sm:text-sm font-medium max-w-[88%] sm:max-w-[75%] break-words">
+                        thursday is my crispy day
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pr-1 pt-0.5 flex-wrap">
+                        <span className="flex items-center gap-1 text-rose-400 font-bold">♥ 842</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🧢 41</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 495</span>
+                        <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 91</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-line flex items-center justify-between text-xs text-ink-faint gap-2">
+                    <span className="truncate text-[11px] sm:text-xs">246 reads · Public excerpt</span>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.('Discover', 1)}
+                      className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-2 text-ink-soft hover:text-white text-xs font-semibold border border-line-2 transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <span>Read chat</span>
+                      <ArrowRight className="w-3 h-3 text-accent" />
+                    </button>
+                  </div>
+                </article>
+              )}
+            </div>
+          )}
+
+          {/* People · Curated Fallback Card when no dynamic people */}
+          {(activeFilterTab === 'All' || activeFilterTab === 'People') && activeSearchResults.people.length === 0 && (
+            <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-canvas-2 border border-line-2 space-y-3.5 shadow-xl min-w-0 overflow-hidden">
+              <h4 className="text-sm font-extrabold text-white">People · public profiles</h4>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <div
+                    className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group min-w-0 flex-1"
+                    onClick={() => onNavigate?.('Profile', '@julespark')}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-surface border border-line-strong group-hover:border-accent flex items-center justify-center font-bold text-[11px] text-ink-soft transition-colors shrink-0">
+                      JP
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white group-hover:text-accent transition-colors truncate">Jules Park</div>
+                      <div className="text-[10px] text-ink-faint truncate">@julespark · Roommate lore and coffee</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => toggleFollow('JP', '@julespark')}
+                    className="text-xs font-semibold text-accent hover:text-accent-bright cursor-pointer shrink-0 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-2 transition-colors border border-line-2"
+                  >
+                    {followedPeople.JP ? 'Following' : 'Follow'}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <div
+                    className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group min-w-0 flex-1"
+                    onClick={() => onNavigate?.('Profile', '@ninapatel')}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-surface border border-line-strong group-hover:border-accent flex items-center justify-center font-bold text-[11px] text-ink-soft transition-colors shrink-0">
+                      NP
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white group-hover:text-accent transition-colors truncate">Nina Patel</div>
+                      <div className="text-[10px] text-ink-faint truncate">@ninapatel · The roommate with the label maker</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => toggleFollow('NP', '@ninapatel')}
+                    className="text-xs font-semibold text-accent hover:text-accent-bright cursor-pointer shrink-0 px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-2 transition-colors border border-line-2"
+                  >
+                    {followedPeople.NP ? 'Following' : 'Follow'}
+                  </button>
                 </div>
               </div>
             </div>
-
-            {/* Messages */}
-            <div className="space-y-4 py-1">
-              {/* Msg 1 — Anonymous */}
-              <div className="space-y-1">
-                <div className="text-[11px] text-ink-muted font-semibold">Anonymous</div>
-                <div className="rounded-2xl rounded-tl-sm px-5 py-3.5 bg-[#172d4b] border border-[#214373] text-ink text-sm font-medium w-[68%]">
-                  i need the air fryer on thursday
-                </div>
-                <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pl-1 pt-0.5">
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">♥ 124</span>
-                  <span className="flex items-center gap-1 text-accent font-bold">🧢 1.2k</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 486</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 82</span>
-                </div>
-              </div>
-
-              {/* Msg 2 — Jules */}
-              <div className="space-y-1 flex flex-col items-end">
-                <div className="text-[11px] text-ink-muted font-semibold pr-1">Jules</div>
-                <div className="rounded-2xl rounded-tr-sm px-5 py-3.5 bg-[#421d33] border border-[#5d2a49] text-rose-50 text-sm font-medium w-[68%]">
-                  thursday is my crispy day
-                </div>
-                <div className="flex items-center gap-3 text-[11px] text-ink-faint font-medium pr-1 pt-0.5">
-                  <span className="flex items-center gap-1 text-rose-400 font-bold">♥ 842</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🧢 41</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">💀 495</span>
-                  <span className="flex items-center gap-1 hover:text-ink-soft cursor-pointer">🔥 91</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card Footer */}
-            <div className="pt-3 border-t border-line flex items-center justify-between text-xs text-ink-faint">
-              <span>246 reads · Public excerpt · Read & react only</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onNavigate?.('Discover', 1)}
-                  className="px-2.5 py-1 rounded-lg bg-surface hover:bg-surface-2 text-ink-soft hover:text-white text-xs font-semibold border border-line-2 transition-colors cursor-pointer flex items-center gap-1"
-                  title="Open full chat in Discover"
-                >
-                  <span>Read chat</span>
-                  <ArrowRight className="w-3 h-3 text-accent" />
-                </button>
-                <button
-                  onClick={() => toggleSave('c2')}
-                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                    savedCards.c2 ? 'text-accent bg-accent/10' : 'text-ink-muted hover:text-white hover:bg-surface'
-                  }`}
-                >
-                  <Bookmark className="w-4 h-4" />
-                </button>
-                <button className="p-1.5 text-ink-muted hover:text-white rounded-lg hover:bg-surface transition-colors cursor-pointer">
-                  <Share2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </article>
-
-          {/* People · public profiles Card */}
-          <div className="p-5 rounded-3xl bg-canvas-2 border border-line-2 space-y-4 shadow-xl">
-            <h4 className="text-sm font-extrabold text-white">People · public profiles</h4>
-
-            <div className="space-y-3.5">
-              <div className="flex items-center justify-between">
-                <div
-                  className="flex items-center gap-3 cursor-pointer group"
-                  onClick={() => onNavigate?.('Profile', '@julespark')}
-                >
-                  <div className="w-8 h-8 rounded-full bg-surface border border-line-strong group-hover:border-accent flex items-center justify-center font-bold text-[11px] text-ink-soft transition-colors">
-                    JP
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-white group-hover:text-accent transition-colors">Jules Park</div>
-                    <div className="text-[10px] text-ink-faint">@julespark · Roommate lore & bad plans</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => toggleFollow('JP', '@julespark')}
-                  className="text-xs font-semibold text-accent hover:text-accent-bright cursor-pointer"
-                >
-                  {followedPeople.JP ? 'Following' : 'Follow'}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div
-                  className="flex items-center gap-3 cursor-pointer group"
-                  onClick={() => onNavigate?.('Profile', '@ninapatel')}
-                >
-                  <div className="w-8 h-8 rounded-full bg-surface border border-line-strong group-hover:border-accent flex items-center justify-center font-bold text-[11px] text-ink-soft transition-colors">
-                    NP
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-white group-hover:text-accent transition-colors">Nina Patel</div>
-                    <div className="text-[10px] text-ink-faint">@ninapatel · The roommate with the label maker</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => toggleFollow('NP', '@ninapatel')}
-                  className="text-xs font-semibold text-accent hover:text-accent-bright cursor-pointer"
-                >
-                  {followedPeople.NP ? 'Following' : 'Follow'}
-                </button>
-              </div>
-            </div>
-          </div>
+          )}
 
           <div className="text-center py-2 text-xs text-ink-faint">
             Showing the closest matches. Anonymous participants have no profile result.
@@ -3351,102 +3465,90 @@ function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, han
               <ChevronDown className="w-3.5 h-3.5 text-ink-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
+        </div>
 
-          {/* Published */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-semibold text-ink-muted">Published</label>
-            <div className="relative">
-              <select
-                value={publishedFilter}
-                onChange={e => setPublishedFilter(e.target.value)}
-                className="w-full appearance-none bg-surface border border-line-2 focus:border-accent rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer pr-8"
-              >
-                <option value="Any time">Any time</option>
-                <option value="Past 24 hours">Past 24 hours</option>
-                <option value="Past week">Past week</option>
-                <option value="Past month">Past month</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-ink-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        {/* Hero Promo */}
+        <div
+          onClick={() => onNavigate && onNavigate("Tonight's picks")}
+          className="relative rounded-3xl overflow-hidden aspect-[4/3] border border-line-2 group cursor-pointer shadow-lg"
+        >
+          <img src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=600&q=80" alt="After hours" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 brightness-75 contrast-125" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-black/20 p-5 flex flex-col justify-between">
+            <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 bg-cyan-950/70 px-2 py-0.5 rounded-full border border-cyan-800/50 w-fit">THE AFTER-HOURS EDIT</span>
+            <div>
+              <h3 className="text-xl font-black text-white leading-tight">Small talk.<br />Big energy.</h3>
+              <div className="flex items-center gap-1 text-xs font-semibold text-ink-soft group-hover:text-white mt-2">
+                <span>Explore tonight's picks</span><ArrowUpRight className="w-3.5 h-3.5" />
+              </div>
             </div>
-          </div>
-
-          {/* Topic */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-semibold text-ink-muted">Topic</label>
-            <div className="relative">
-              <select
-                value={topicFilter}
-                onChange={e => setTopicFilter(e.target.value)}
-                className="w-full appearance-none bg-surface border border-line-2 focus:border-accent rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer pr-8"
-              >
-                <option value="All topics">All topics</option>
-                <option value="#roommatelore">#roommatelore</option>
-                <option value="#dating">#dating</option>
-                <option value="#workbesties">#workbesties</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-ink-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
-
-          <div className="pt-1">
-            <button
-              onClick={() => {
-                setSortBy('Most relevant');
-                setPublishedFilter('Any time');
-                setTopicFilter('All topics');
-              }}
-              className="text-xs text-accent hover:underline font-semibold cursor-pointer"
-            >
-              Reset filters
-            </button>
           </div>
         </div>
 
-        {/* Card 2: Recent searches */}
-        <div className="p-5 rounded-3xl bg-canvas-2 border border-line-2 space-y-3.5">
-          <h4 className="text-sm font-extrabold text-white tracking-tight">Recent searches</h4>
+        {/* Group Chat List */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-extrabold text-white">In the group chat</h4>
+            <button
+              onClick={() => onNavigate && onNavigate('Topics directory')}
+              className="text-xs text-ink-muted hover:text-accent flex items-center gap-1 font-semibold cursor-pointer"
+            >
+              <span>View all</span><ArrowUpRight className="w-3 h-3" />
+            </button>
+          </div>
+          {[
+            { tag: '#dating', desc: 'The bar is in the basement', count: '2.8k chats' },
+            { tag: '#roommatelore', desc: 'Shared rent. Unshared brain cell.', count: '1.4k chats' },
+            { tag: '#workbesties', desc: 'This meeting could be a chat', count: '986 chats' },
+          ].map(item => (
+            <div
+              key={item.tag}
+              onClick={() => onNavigate && onNavigate('Topic detail', item.tag)}
+              className="p-3 rounded-2xl bg-canvas-2 border border-line-2 hover:border-line-strong hover:bg-surface transition-all flex items-start gap-3 cursor-pointer group"
+            >
+              <div className="p-2 rounded-xl bg-surface-2 text-ink-muted group-hover:text-accent transition-colors shrink-0">
+                <ArrowUpRight className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-white group-hover:text-accent transition-colors truncate">{item.tag}</div>
+                <div className="text-[11px] text-ink-muted truncate mt-0.5">{item.desc}</div>
+                <div className="text-[10px] text-ink-faint mt-1">{item.count}</div>
+              </div>
+            </div>
+          ))}
+        </div>
 
-          <div className="space-y-2.5 text-xs text-ink-soft">
-            {recentSearches.map(term => (
-              <div
-                key={term}
-                onClick={() => {
-                  if (term.startsWith('@')) {
-                    onNavigate?.('Profile', term);
-                  } else {
-                    setQuery(term);
-                  }
-                }}
-                className="hover:text-accent cursor-pointer transition-colors flex items-center justify-between"
-              >
-                <span>{term}</span>
-                {term.startsWith('@') && <span className="text-[10px] text-ink-faint">Profile →</span>}
+        {/* Mood Box */}
+        <div className="p-4 rounded-2xl bg-canvas-2 border border-line-2 space-y-3">
+          <h4 className="text-xs font-extrabold text-white">You set the mood.</h4>
+          <p className="text-[11px] text-ink-muted leading-relaxed">React to a message. Its most-loved reaction colors the bubble.</p>
+          <div className="grid grid-cols-4 gap-2 pt-1">
+            {[
+              { label: 'Heart', icon: <Heart className="w-4 h-4 text-ink-soft" /> },
+              { label: 'Cap', icon: <span className="text-base">🧢</span> },
+              { label: 'Skull', icon: <span className="text-base">💀</span> },
+              { label: 'Fire', icon: <span className="text-base">🔥</span> },
+            ].map((it, idx) => (
+              <div key={idx} className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-surface border border-line-2 hover:border-line-strong transition-colors cursor-pointer">
+                {it.icon}
+                <span className="text-[10px] font-semibold text-ink-muted">{it.label}</span>
               </div>
             ))}
           </div>
-
-          <div className="pt-2 border-t border-line">
-            <button className="text-xs text-accent hover:underline font-semibold cursor-pointer">
-              Clear search history
-            </button>
-          </div>
         </div>
 
-        {/* Card 3: Search what's public */}
+        {/* Privacy Banner */}
         <div className="p-4 rounded-2xl bg-canvas-2 border border-line-2 flex items-start gap-3">
           <ShieldCheck className="w-5 h-5 text-accent shrink-0 mt-0.5" />
           <div>
-            <h5 className="text-xs font-bold text-white">Search what's public.</h5>
-            <p className="text-[11px] text-ink-muted leading-relaxed mt-1">
-              Results include published excerpts, public profiles and topics. Private conversations and anonymous identities are not searchable here.
-            </p>
+            <h5 className="text-xs font-bold text-white">Public chat. Private identity.</h5>
+            <p className="text-[11px] text-ink-muted leading-relaxed mt-1">One publisher makes the other participant Anonymous. Both identities appear only if both publish.</p>
           </div>
         </div>
 
-        {/* Footer links */}
-        <div className="text-[10px] text-ink-faint space-y-1 pt-1 px-1">
-          <div className="flex gap-2">
-            <span className="hover:underline cursor-pointer">About</span>
+        {/* Footer */}
+        <div className="text-xs text-ink-faint space-y-2 pt-2">
+          <div className="flex items-center gap-2">
+            <span className="hover:underline cursor-pointer">About CCHAT</span>
             <span>·</span>
             <span className="hover:underline cursor-pointer">Community rules</span>
             <span>·</span>
@@ -3459,9 +3561,6 @@ function SearchPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string, han
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// VIEW 7: NOTIFICATIONS PAGE (MATCHING FIGMA SCREENSHOT)
-// ─────────────────────────────────────────────────────────────
 function NotificationsPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: string) => void; onOpenMenu?: () => void }) {
   const [activeTab, setActiveTab] = useState<'All activity' | 'Unread' | 'Reactions' | 'Follows'>('All activity');
   const [notifications, setNotifications] = useState([
@@ -3624,22 +3723,7 @@ function NotificationsPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
             <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Notifications</h2>
           </div>
           <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-            <button
-              onClick={() => onNavigate && onNavigate('Search')}
-              className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-              title="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <div className="relative w-48 sm:w-64 md:w-80 hidden sm:block">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
+<GlobalSearchBar onNavigate={onNavigate} />
             <button className="p-2 text-accent hover:text-white rounded-full bg-surface transition-colors cursor-pointer relative">
               <Bell className="w-4 h-4" />
             </button>
@@ -4361,22 +4445,7 @@ function ProfilePage({
             </h2>
           </div>
           <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-            <button
-              onClick={() => onNavigate && onNavigate('Search')}
-              className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-              title="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <div className="relative w-48 sm:w-64 md:w-80 hidden sm:block">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
+<GlobalSearchBar onNavigate={onNavigate} />
             <button
               onClick={() => onNavigate && onNavigate('Notifications')}
               className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative"
@@ -5091,23 +5160,7 @@ function AccountSettingsPage({
             <h2 className="text-xl font-bold text-white tracking-tight">Account and settings</h2>
           </div>
           <div className="flex items-center gap-3">
-            <div className="relative hidden sm:block w-48 md:w-64 lg:w-80">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                onClick={() => onNavigate && onNavigate('Search')}
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors cursor-pointer"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
-            <button
-              onClick={() => onNavigate && onNavigate('Search')}
-              className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-              aria-label="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
+<GlobalSearchBar onNavigate={onNavigate} />
             <button
               onClick={() => onNavigate && onNavigate('Notifications')}
               className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative"
@@ -5683,23 +5736,7 @@ function PublishedChatsPage({
             <h2 className="text-xl font-bold text-white tracking-tight">Published chats</h2>
           </div>
           <div className="flex items-center gap-3">
-            <div className="relative hidden sm:block w-48 md:w-64 lg:w-80">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                onClick={() => onNavigate && onNavigate('Search')}
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors cursor-pointer"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
-            <button
-              onClick={() => onNavigate && onNavigate('Search')}
-              className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-              aria-label="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
+<GlobalSearchBar onNavigate={onNavigate} />
             <button
               onClick={() => onNavigate && onNavigate('Notifications')}
               className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative"
@@ -6063,23 +6100,7 @@ function TopicsDirectoryPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: st
             <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Topics directory</h2>
           </div>
           <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-            <button
-              onClick={() => onNavigate && onNavigate('Search')}
-              className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-              title="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <div className="relative w-48 sm:w-64 md:w-80 hidden sm:block">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                onClick={() => onNavigate && onNavigate('Search')}
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors cursor-pointer"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
+<GlobalSearchBar onNavigate={onNavigate} />
             <button
               onClick={() => onNavigate && onNavigate('Notifications')}
               className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative"
@@ -6329,23 +6350,7 @@ function TopicDetailPage({ topicTag = '#dating', onNavigate, onOpenMenu }: Topic
             <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">{currentTopic}</h2>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            <button
-              onClick={() => onNavigate && onNavigate('Search')}
-              className="sm:hidden p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"
-              title="Search"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-            <div className="relative w-48 sm:w-64 md:w-80 hidden sm:block">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                onClick={() => onNavigate && onNavigate('Search')}
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors cursor-pointer"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
+<GlobalSearchBar onNavigate={onNavigate} />
             <button
               onClick={() => onNavigate && onNavigate('Notifications')}
               className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer relative"
@@ -7198,6 +7203,13 @@ export function App() {
   const [selectedChatIdForMyChats, setSelectedChatIdForMyChats] = useState<number | null>(null);
   const [discoverFilterPublisher, setDiscoverFilterPublisher] = useState<string | null>(null);
   const [discoverTargetExcerptId, setDiscoverTargetExcerptId] = useState<number | null>(null);
+  const [searchInitialQuery, setSearchInitialQuery] = useState<string>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('q') || '';
+    } catch {
+      return '';
+    }
+  });
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('cchat_user');
@@ -7341,6 +7353,9 @@ export function App() {
       setDiscoverTargetExcerptId(null);
     }
 
+    if (nav === 'Search') {
+      setSearchInitialQuery(typeof topicOrParam === 'string' ? topicOrParam : '');
+    }
     setActiveNav(nav);
     setIsMobileMenuOpen(false); // close drawer on navigation
 
@@ -7471,7 +7486,7 @@ export function App() {
       return <StartChatPage currentUser={currentUser} onNavigate={handleNavigate} onOpenMenu={handleOpenMenu} />;
     }
     if (activeNav === 'Search') {
-      return <SearchPage onNavigate={handleNavigate} onOpenMenu={handleOpenMenu} />;
+      return <SearchPage initialQuery={searchInitialQuery} onNavigate={handleNavigate} onOpenMenu={handleOpenMenu} />;
     }
     if (activeNav === 'Notifications') {
       return <NotificationsPage onNavigate={handleNavigate} onOpenMenu={handleOpenMenu} />;
@@ -7731,16 +7746,7 @@ function TonightsPicksPage({ onNavigate, onOpenMenu }: { onNavigate?: (nav: stri
             <span>The after-hours edit</span>
           </div>
           <div className="flex items-center gap-4">
-            <div className="relative w-72">
-              <Search className="w-4 h-4 text-ink-faint absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                onClick={() => onNavigate && onNavigate('Search')}
-                placeholder="Search chats, people, plot twists"
-                className="w-full bg-surface border border-line-2 focus:border-accent rounded-full pl-9 pr-12 py-2 text-xs text-white placeholder:text-ink-faint focus:outline-none transition-colors cursor-pointer"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-ink-faint font-mono bg-surface-2 px-1.5 py-0.5 rounded border border-line-strong">⌘ K</span>
-            </div>
+<GlobalSearchBar onNavigate={onNavigate} className="relative w-72" />
             <button
               onClick={() => onNavigate && onNavigate('Notifications')}
               className="p-2 text-ink-muted hover:text-white rounded-full hover:bg-surface transition-colors cursor-pointer"

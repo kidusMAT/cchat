@@ -242,6 +242,47 @@ export const cchatApi = {
     }
   },
 
+  async getOAuthStatus(): Promise<{ google_enabled: boolean; client_id: string }> {
+    const res = await apiFetch('/auth/oauth-status/');
+    if (!res.ok) return { google_enabled: false, client_id: '' };
+    return res.json();
+  },
+
+  async getGoogleLoginUrl(): Promise<string> {
+    const res = await apiFetch('/auth/google/login/?format=json');
+    if (!res.ok) throw new Error('Google OAuth is unavailable');
+    const data = await res.json();
+    return data.url;
+  },
+
+  async exchangeOAuthTicket(ticket: string): Promise<{ token: string; user: UserProfile }> {
+    const res = await apiFetch('/auth/oauth-ticket/', {
+      method: 'POST',
+      body: JSON.stringify({ ticket }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'OAuth exchange failed' }));
+      throw new Error(err.detail || 'OAuth exchange failed');
+    }
+    const data = await res.json();
+    authStorage.setToken(data.token);
+    return data;
+  },
+
+  async googleTokenLogin(credentialOrToken: string): Promise<{ token: string; user: UserProfile }> {
+    const res = await apiFetch('/auth/google/', {
+      method: 'POST',
+      body: JSON.stringify({ credential: credentialOrToken }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Google login failed' }));
+      throw new Error(err.detail || 'Google login failed');
+    }
+    const data = await res.json();
+    authStorage.setToken(data.token);
+    return data;
+  },
+
   async getMe(): Promise<UserProfile> {
     const res = await apiFetch('/auth/me/');
     if (!res.ok) {
@@ -439,17 +480,33 @@ export const cchatApi = {
 
 
   // Excerpts & Feed
-  async getExcerpts(params?: { tab?: string; topic?: string; publisher?: string }): Promise<PublicExcerptItem[]> {
+  async getExcerpts(params?: { tab?: string; topic?: string; publisher?: string; q?: string }): Promise<PublicExcerptItem[]> {
     const query = new URLSearchParams();
     if (params?.tab) query.set('tab', params.tab.toLowerCase());
     if (params?.topic) query.set('topic', params.topic);
     if (params?.publisher) query.set('publisher', params.publisher);
+    if (params?.q) query.set('q', params.q);
 
     const queryString = query.toString() ? `?${query.toString()}` : '';
     const res = await apiFetch(`/excerpts/${queryString}`);
     if (!res.ok) throw new Error('Failed to load excerpts');
     const data = await res.json();
     return data.results || data;
+  },
+
+  async unifiedSearch(queryStr: string): Promise<{
+    excerpts: PublicExcerptItem[];
+    people: UserProfile[];
+    topics: Array<{ id: number; tag: string; name: string; chats_count: number }>;
+    total: number;
+  }> {
+    const q = queryStr.trim();
+    if (!q) {
+      return { excerpts: [], people: [], topics: [], total: 0 };
+    }
+    const res = await apiFetch(`/search/?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error('Search failed');
+    return res.json();
   },
 
   async reactMessage(msgId: number, type: 'heart' | 'cap' | 'skull' | 'fire') {

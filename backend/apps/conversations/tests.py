@@ -28,6 +28,10 @@ class ConversationSecurityTests(TestCase):
             user=self.user_eve, handle='@eve_test', display_name='Eve Intruder'
         )
 
+        # Maya and Jules follow each other for direct messaging
+        self.profile_maya.following.add(self.profile_jules)
+        self.profile_jules.following.add(self.profile_maya)
+
         # Private conversation between Maya and Jules
         self.conv = Conversation.objects.create(
             title='Secret Planning',
@@ -80,6 +84,25 @@ class ConversationSecurityTests(TestCase):
         self.client.force_authenticate(user=self.user_eve)
         res = self.client.post(f'/api/chats/{self.conv.id}/send_message/', {'text': 'Eve hacking in'}, format='json')
         self.assertIn(res.status_code, [status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND])
+
+    def test_cannot_create_chat_without_following_recipient(self):
+        """Guard: User cannot start chat with someone they do not follow."""
+        self.client.force_authenticate(user=self.user_eve)
+        res = self.client.post('/api/chats/', {
+            'recipient_handle': '@jules_test',
+            'text': 'Hello without following',
+            'title': 'Blocked Chat'
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('You must follow', res.data.get('detail', ''))
+
+    def test_cannot_send_message_without_following_participant(self):
+        """Guard: User cannot send message in conversation if not following other participant."""
+        self.profile_maya.following.remove(self.profile_jules)
+        self.client.force_authenticate(user=self.user_maya)
+        res = self.client.post(f'/api/chats/{self.conv.id}/send_message/', {'text': 'Unfollowed ping'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('You must follow', res.data.get('detail', ''))
 
     def test_participant_can_publish_and_remove_excerpt(self):
         self.client.force_authenticate(user=self.user_maya)
@@ -223,4 +246,3 @@ class ConversationSecurityTests(TestCase):
         self.assertEqual(jules_revealed_msg['sender_display'], 'Jules Test')
         self.assertEqual(jules_revealed_msg['sender_handle'], '@jules_test')
         self.assertFalse(jules_revealed_msg['is_anonymous'])
-

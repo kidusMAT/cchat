@@ -1,14 +1,12 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
     container_name: cchat_db
     restart: always
     environment:
-      POSTGRES_DB: cchat_db
-      POSTGRES_USER: cchat_user
-      POSTGRES_PASSWORD: cchat_secure_pass
+      POSTGRES_DB: ${POSTGRES_DB:-cchat_db}
+      POSTGRES_USER: ${POSTGRES_USER:-cchat_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -27,10 +25,10 @@ services:
     restart: always
     environment:
       DJANGO_DEBUG: "False"
-      DJANGO_SECRET_KEY: "prod-secret-key-replace-in-env-file-minimum-fifty-characters"
-      DJANGO_ALLOWED_HOSTS: "backend,localhost,127.0.0.1,web"
-      DATABASE_URL: "postgres://cchat_user:cchat_secure_pass@db:5432/cchat_db"
-      CORS_ALLOWED_ORIGINS: "http://localhost,http://127.0.0.1,http://localhost:5173"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}
+      DATABASE_URL: postgres://${POSTGRES_USER:-cchat_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-cchat_db}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS in .env}
       SECURE_SSL_REDIRECT: "False" # Set to True when SSL terminated
       SESSION_COOKIE_SECURE: "False"
       CSRF_COOKIE_SECURE: "False"

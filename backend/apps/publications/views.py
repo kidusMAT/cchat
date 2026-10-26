@@ -16,6 +16,14 @@ class TopicViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = TopicSerializer
     permission_classes = [permissions.AllowAny]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.query_params.get('q') or self.request.query_params.get('search')
+        if q:
+            clean_tag = q if q.startswith('#') else f"#{q}"
+            qs = qs.filter(Q(tag__icontains=q) | Q(tag__icontains=clean_tag) | Q(name__icontains=q))
+        return qs
+
 
 class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = PublicExcerpt.objects.filter(is_active=True).prefetch_related('publishers', 'messages', 'topic', 'conversation')
@@ -36,6 +44,16 @@ class PublicExcerptViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        q = self.request.query_params.get('q') or self.request.query_params.get('search')
+        if q:
+            qs = qs.filter(
+                Q(title__icontains=q) |
+                Q(topic__tag__icontains=q) |
+                Q(topic__name__icontains=q) |
+                Q(messages__text__icontains=q) |
+                Q(publishers__display_name__icontains=q) |
+                Q(publishers__handle__icontains=q)
+            ).distinct()
         tab = self.request.query_params.get('tab')
         topic_tag = self.request.query_params.get('topic')
         publisher = self.request.query_params.get('publisher') or self.request.query_params.get('handle')
@@ -138,6 +156,12 @@ def react_message(request, msg_id):
         messages=msg
     ).exists()
 
+    if not belongs_to_active_excerpt and msg.conversation:
+        active_exc = msg.conversation.excerpts.filter(is_active=True).first()
+        if active_exc:
+            active_exc.messages.add(msg)
+            belongs_to_active_excerpt = True
+
     if not belongs_to_active_excerpt:
         return Response(
             {'detail': 'Reactions are strictly forbidden on private messages. Message must belong to an active public excerpt.'},
@@ -163,6 +187,9 @@ def react_message(request, msg_id):
         'fire': msg.reactions.filter(reaction_type='fire').count(),
         'user_reacted': user_reacted
     }
+    has_any = any(counts[k] > 0 for k in ['heart', 'cap', 'skull', 'fire'])
+    counts['dominant'] = max(['heart', 'cap', 'skull', 'fire'], key=lambda k: counts[k]) if has_any else None
+    counts['total'] = sum(counts[k] for k in ['heart', 'cap', 'skull', 'fire'])
     return Response(counts, status=status.HTTP_200_OK)
 
 
@@ -201,3 +228,61 @@ class SavedExcerptViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user.profile)
+
+
+
+class UnifiedSearchView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        q = (request.query_params.get('q') or request.query_params.get('search') or '').strip()
+        if not q:
+            return Response({'excerpts': [], 'people': [], 'topics': [], 'total': 0})
+
+        # Excerpts matching title, topic tag/name, message text, author
+        excerpt_qs = PublicExcerpt.objects.filter(is_active=True).filter(
+            Q(title__icontains=q) |
+            Q(topic__tag__icontains=q) |
+            Q(topic__name__icontains=q) |
+            Q(messages__text__icontains=q) |
+            Q(publishers__display_name__icontains=q) |
+            Q(publishers__handle__icontains=q)
+        ).prefetch_related('publishers', 'messages', 'topic', 'conversation').distinct()[:10]
+
+        context = {'request': request}
+        if request.user.is_authenticated:
+            try:
+                context['current_user_profile'] = request.user.profile
+            except Exception:
+                context['current_user_profile'] = None
+        else:
+            context['current_user_profile'] = None
+
+        excerpts_data = PublicExcerptSerializer(excerpt_qs, many=True, context=context).data
+
+        # People matching handle, display_name, bio
+        from apps.accounts.serializers import UserProfileSerializer
+        clean_handle = q if q.startswith('@') else f"@{q}"
+        people_qs = UserProfile.objects.filter(
+            Q(handle__icontains=q) |
+            Q(handle__icontains=clean_handle) |
+            Q(display_name__icontains=q) |
+            Q(bio__icontains=q)
+        ).select_related('user')[:8]
+        people_data = UserProfileSerializer(people_qs, many=True, context=context).data
+
+        # Topics matching tag or name
+        clean_tag = q if q.startswith('#') else f"#{q}"
+        topic_qs = Topic.objects.filter(
+            Q(tag__icontains=q) |
+            Q(tag__icontains=clean_tag) |
+            Q(name__icontains=q)
+        ).order_by('-chats_count')[:8]
+        topics_data = TopicSerializer(topic_qs, many=True).data
+
+        return Response({
+            'excerpts': excerpts_data,
+            'people': people_data,
+            'topics': topics_data,
+            'total': len(excerpts_data) + len(people_data) + len(topics_data)
+        })

@@ -9,12 +9,18 @@ from apps.accounts.views import (
     DemoLoginView,
     LogoutView,
     UserProfileViewSet,
+    OAuthStatusView,
+    GoogleLoginInitView,
+    GoogleCallbackView,
+    OAuthTicketExchangeView,
+    GoogleTokenLoginView,
 )
 from apps.conversations.views import ConversationViewSet
 from apps.publications.views import (
     PublicExcerptViewSet,
     TopicViewSet,
     SavedExcerptViewSet,
+    UnifiedSearchView,
     react_message,
 )
 from apps.publications.admin_views import AdminStatsView
@@ -43,6 +49,14 @@ urlpatterns = [
     path('api/auth/demo-login/', DemoLoginView.as_view(), name='auth-demo-login'),
     path('api/auth/logout/', LogoutView.as_view(), name='auth-logout'),
     path('api/auth/me/', MeView.as_view(), name='auth-me'),
+    path('api/auth/oauth-status/', OAuthStatusView.as_view(), name='auth-oauth-status'),
+    path('api/auth/google/login/', GoogleLoginInitView.as_view(), name='auth-google-login'),
+    path('api/auth/google/callback/', GoogleCallbackView.as_view(), name='auth-google-callback'),
+    path('api/auth/oauth-ticket/', OAuthTicketExchangeView.as_view(), name='auth-oauth-ticket'),
+    path('api/auth/google/', GoogleTokenLoginView.as_view(), name='auth-google-token'),
+
+    # Search
+    path('api/search/', UnifiedSearchView.as_view(), name='unified-search'),
 
     # Excerpt & message reactions
     path('api/excerpts/messages/<int:msg_id>/react/', react_message, name='message-react'),

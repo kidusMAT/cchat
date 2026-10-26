@@ -11,18 +11,74 @@ class MessageSerializer(serializers.ModelSerializer):
     is_read = serializers.SerializerMethodField()
     reply_to_text = serializers.SerializerMethodField()
     reply_to_sender = serializers.SerializerMethodField()
+    reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             'id', 'conversation', 'sender', 'sender_name', 'sender_handle', 'sender_avatar',
             'is_maya', 'is_self', 'is_read', 'text', 'attachment_url', 'attachment_name', 'attachment_type',
-            'is_edited', 'quick_reactions', 'reply_to', 'reply_to_text', 'reply_to_sender',
+            'is_edited', 'quick_reactions', 'reactions', 'reply_to', 'reply_to_text', 'reply_to_sender',
             'is_excerpt_eligible', 'created_at'
         ]
 
+    def get_reactions(self, obj):
+        has_reactions = obj.reactions.exists()
+        is_published = False
+        if hasattr(obj, 'conversation') and obj.conversation:
+            try:
+                is_published = obj.conversation.excerpts.filter(is_active=True).exists()
+            except Exception:
+                pass
+
+        if not has_reactions and not is_published:
+            return None
+
+        request = self.context.get('request')
+        current_user_profile = None
+        if request and request.user and request.user.is_authenticated:
+            try:
+                current_user_profile = request.user.profile
+            except Exception:
+                pass
+
+        all_rx = list(obj.reactions.all())
+        user_reaction = None
+        if current_user_profile:
+            for r in all_rx:
+                if r.user_id == current_user_profile.id:
+                    user_reaction = r.reaction_type
+                    break
+
+        counts = {
+            'heart': sum(1 for r in all_rx if r.reaction_type == 'heart'),
+            'cap': sum(1 for r in all_rx if r.reaction_type == 'cap'),
+            'skull': sum(1 for r in all_rx if r.reaction_type == 'skull'),
+            'fire': sum(1 for r in all_rx if r.reaction_type == 'fire'),
+        }
+        total = sum(counts.values())
+        dominant = max(counts, key=counts.get) if total > 0 else None
+
+        return {
+            'heart': counts['heart'],
+            'cap': counts['cap'],
+            'skull': counts['skull'],
+            'fire': counts['fire'],
+            'user_reacted': user_reaction,
+            'dominant': dominant,
+            'total': total,
+        }
+
     def get_is_read(self, obj):
-        return obj.seen_at is not None
+        if obj.seen_at is not None:
+            return True
+        if hasattr(obj, 'conversation') and obj.conversation_id:
+            try:
+                if obj.conversation.messages.filter(id__gt=obj.id).exclude(sender=obj.sender).exists():
+                    return True
+            except Exception:
+                pass
+        return False
 
     def get_reply_to_text(self, obj):
         if obj.reply_to:

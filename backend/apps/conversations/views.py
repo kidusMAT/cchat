@@ -26,7 +26,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
             profile = user.profile
         except UserProfile.DoesNotExist:
             return Conversation.objects.none()
-        return Conversation.objects.filter(participants=profile).prefetch_related('participants', 'messages', 'excerpts')
+        return Conversation.objects.filter(participants=profile).prefetch_related('participants', 'messages', 'messages__reactions', 'excerpts')
 
     def get_serializer_class(self):
         if self.action in ['retrieve', 'create']:
@@ -172,6 +172,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
             last_section = active_excerpt.sections.order_by('order').last()
             if last_section:
                 last_section.messages.add(message)
+
+        # Mark all prior unread messages from other participants as seen by current_profile
+        conversation.messages.filter(
+            seen_at__isnull=True
+        ).exclude(sender=current_profile).update(seen_at=timezone.now())
 
         conversation.save()  # update updated_at timestamp
 

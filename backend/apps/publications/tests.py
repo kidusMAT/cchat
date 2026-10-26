@@ -115,3 +115,25 @@ class PublicationsSecurityTests(TestCase):
         self.assertEqual(res_unsave.status_code, status.HTTP_200_OK)
         self.assertFalse(res_unsave.data['saved'])
         self.assertFalse(SavedExcerpt.objects.filter(user=self.profile, excerpt=self.excerpt).exists())
+
+    def test_unified_search_endpoint(self):
+        # Empty query
+        res = self.client.get('/api/search/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['total'], 0)
+
+        # Search matching excerpt title
+        res_excerpt = self.client.get('/api/search/?q=Featured')
+        self.assertEqual(res_excerpt.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(res_excerpt.data['excerpts']), 1)
+        self.assertEqual(res_excerpt.data['excerpts'][0]['title'], 'Featured Public Story')
+
+        # Search matching author handle
+        res_people = self.client.get('/api/search/?q=author_user')
+        self.assertEqual(res_people.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(res_people.data['people']), 1)
+
+        # Search matching topic tag
+        res_topics = self.client.get('/api/search/?q=trending')
+        self.assertEqual(res_topics.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(res_topics.data['topics']), 1)

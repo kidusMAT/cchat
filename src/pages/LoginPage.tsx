@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { authStorage, cchatApi, UserProfile } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { cchatApi, UserProfile } from '../services/api';
 import { CchatLogo } from '../components/CchatLogo';
 import { Button, Badge } from '../components/ui';
 
@@ -15,6 +15,10 @@ const FEATURES = [
   'React with vibes',
   'Save the plot twists',
 ];
+
+// Demo identities are for local preview builds only. Production bundles never
+// render the control, even if a build environment mistakenly sets the flag.
+const DEMO_LOGIN_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true';
 
 interface FieldProps {
   id: string;
@@ -64,13 +68,45 @@ function Field({
   );
 }
 
+function GoogleIcon() {
+  return (
+    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+      />
+    </svg>
+  );
+}
+
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [tab, setTab] = useState<Tab>('login');
 
   const [loginHandle, setLoginHandle] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const [loginError, setLoginError] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const oauthError = params.get('oauth_error');
+      if (oauthError) return `Google sign-in could not be completed: ${oauthError}`;
+    }
+    return '';
+  });
   const [loginLoading, setLoginLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [isGoogleEnabled, setIsGoogleEnabled] = useState(true);
 
   const [signupHandle, setSignupHandle] = useState('');
   const [signupDisplayName, setSignupDisplayName] = useState('');
@@ -79,6 +115,18 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [signupError, setSignupError] = useState('');
   const [signupSuccess, setSignupSuccess] = useState('');
   const [signupLoading, setSignupLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    cchatApi.getOAuthStatus()
+      .then((status) => {
+        if (isMounted) setIsGoogleEnabled(status.google_enabled);
+      })
+      .catch(() => {
+        if (isMounted) setIsGoogleEnabled(false);
+      });
+    return () => { isMounted = false; };
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,6 +149,22 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       setLoginError(err.message || 'Invalid username/handle or password.');
     } finally {
       setLoginLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoginError('');
+    setGoogleLoading(true);
+    try {
+      const url = await cchatApi.getGoogleLoginUrl();
+      if (url) {
+        window.location.href = url;
+      } else {
+        throw new Error('Google authorization URL not returned');
+      }
+    } catch (err: any) {
+      setLoginError(err.message || 'Google sign-in is currently unavailable.');
+      setGoogleLoading(false);
     }
   };
 
@@ -159,19 +223,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       } else {
         onLogin('@mayamaybe');
       }
-    } catch {
-      const fallbackUser: UserProfile = {
-        id: 1,
-        handle: '@mayamaybe',
-        display_name: 'Maya Chen',
-        avatar_url:
-          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
-        bio: 'A little less posting. A lot more plot.',
-      };
-      authStorage.setToken('demo-token-maya');
-      localStorage.setItem('cchat_logged_in', 'true');
-      localStorage.setItem('cchat_user', JSON.stringify(fallbackUser));
-      onLogin(fallbackUser);
+    } catch (err: any) {
+      setLoginError(err.message || 'Demo sign-in is unavailable.');
     } finally {
       setLoginLoading(false);
     }
@@ -258,6 +311,30 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             ))}
           </div>
 
+          {/* Social Sign In (Google OAuth) */}
+          {isGoogleEnabled && (
+            <div className="space-y-4">
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                fullWidth
+                loading={googleLoading}
+                onClick={handleGoogleLogin}
+                className="flex items-center justify-center gap-2.5 font-semibold border-line-2 bg-canvas-2 hover:bg-canvas text-ink"
+              >
+                <GoogleIcon />
+                <span>Continue with Google</span>
+              </Button>
+
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-line-2" />
+                <span className="text-[11px] font-semibold text-ink-faint">OR</span>
+                <div className="h-px flex-1 bg-line-2" />
+              </div>
+            </div>
+          )}
+
           {tab === 'login' && (
             <form onSubmit={handleLogin} className="space-y-4">
               {signupSuccess && (
@@ -318,21 +395,25 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 {loginLoading ? 'Signing in…' : 'Sign in'}
               </Button>
 
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-line-2" />
-                <span className="text-[11px] font-semibold text-ink-faint">OR</span>
-                <div className="h-px flex-1 bg-line-2" />
-              </div>
+              {DEMO_LOGIN_ENABLED && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-line-2" />
+                    <span className="text-[11px] font-semibold text-ink-faint">LOCAL DEMO</span>
+                    <div className="h-px flex-1 bg-line-2" />
+                  </div>
 
-              <Button
-                type="button"
-                variant="secondary"
-                size="lg"
-                fullWidth
-                onClick={handleDemoLogin}
-              >
-                Continue as Maya (demo)
-              </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="lg"
+                    fullWidth
+                    onClick={handleDemoLogin}
+                  >
+                    Continue as Maya (demo)
+                  </Button>
+                </>
+              )}
             </form>
           )}
 

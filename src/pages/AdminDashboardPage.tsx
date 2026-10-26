@@ -89,8 +89,6 @@ function OverviewTab() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
     try {
       const data = await cchatApi.getAdminStats();
       setStats(data);
@@ -101,7 +99,14 @@ function OverviewTab() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    cchatApi.getAdminStats()
+      .then((data) => { if (active) setStats(data); })
+      .catch(() => { if (active) setError('Could not load stats. Make sure you are logged in as a staff user.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const cards: StatCard[] = stats ? [
     { label: 'Total Users',        value: stats.total_users,         icon: Users,        color: 'text-accent',    bg: 'bg-accent/8',    border: 'border-accent/15' },
@@ -114,7 +119,7 @@ function OverviewTab() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader icon={BarChart3} title="Platform Overview" count={undefined} loading={loading} onRefresh={load} />
+      <SectionHeader icon={BarChart3} title="Platform Overview" count={undefined} loading={loading} onRefresh={() => { setLoading(true); setError(''); void load(); }} />
 
       {error && (
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-rose-500/8 border border-rose-500/20 text-rose-300 text-sm">
@@ -202,13 +207,19 @@ function InquiriesTab() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    setLoading(true); setError('');
     try { setInquiries(await cchatApi.getAdminInquiries()); }
     catch { setError('Failed to load inquiries.'); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    cchatApi.getAdminInquiries()
+      .then((data) => { if (active) setInquiries(data); })
+      .catch(() => { if (active) setError('Failed to load inquiries.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const handleStatus = async (id: number, status: string) => {
     setUpdating(id);
@@ -312,13 +323,19 @@ function ReportsTab() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    setLoading(true); setError('');
     try { setReports(await cchatApi.getAdminReports()); }
     catch { setError('Failed to load reports.'); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    cchatApi.getAdminReports()
+      .then((data) => { if (active) setReports(data); })
+      .catch(() => { if (active) setError('Failed to load reports.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const handleStatus = async (id: number, status: string) => {
     setUpdating(id);
@@ -414,13 +431,19 @@ function PrivacyTab() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    setLoading(true); setError('');
     try { setReqs(await cchatApi.getAdminPrivacyRequests()); }
     catch { setError('Failed to load privacy requests.'); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    cchatApi.getAdminPrivacyRequests()
+      .then((data) => { if (active) setReqs(data); })
+      .catch(() => { if (active) setError('Failed to load privacy requests.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const handleStatus = async (id: number, status: string) => {
     setUpdating(id);
@@ -500,7 +523,7 @@ interface AdminDashboardPageProps {
   onOpenMenu?: () => void;
 }
 
-export function AdminDashboardPage({ onNavigate, onOpenMenu }: AdminDashboardPageProps) {
+export function AdminDashboardPage({ onNavigate: _onNavigate, onOpenMenu }: AdminDashboardPageProps) {
   const [tab, setTab] = useState<Tab>('overview');
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [

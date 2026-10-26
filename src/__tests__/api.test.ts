@@ -120,7 +120,7 @@ describe('cchatApi service contract', () => {
 
     const res = await cchatApi.reactMessage(21, 'heart');
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, options] = mockFetch.mock.calls[0];
+    const [url] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/excerpts/messages/21/react/');
     expect(res.user_reacted).toBe('heart');
   });
@@ -141,7 +141,7 @@ describe('cchatApi service contract', () => {
 
     const res = await cchatApi.sendMessage(1, 'New message');
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, options] = mockFetch.mock.calls[0];
+    const [url] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/chats/1/send_message/');
     expect(res.text).toBe('New message');
   });
@@ -199,6 +199,42 @@ describe('cchatApi service contract', () => {
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body)).toEqual({ unpublish_all: true });
     expect(res.detail).toBe('Publication removed');
+  });
+
+  it('fetches oauth status', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ google_enabled: true, client_id: 'client-abc.apps.googleusercontent.com' }),
+    });
+    global.fetch = mockFetch;
+
+    const res = await cchatApi.getOAuthStatus();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/auth/oauth-status/');
+    expect(res.google_enabled).toBe(true);
+    expect(res.client_id).toBe('client-abc.apps.googleusercontent.com');
+  });
+
+  it('exchanges oauth ticket and saves token', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        token: 'auth-token-xyz',
+        user: { id: 99, handle: '@oauth_user', display_name: 'OAuth User', avatar_url: '', bio: '' },
+      }),
+    });
+    global.fetch = mockFetch;
+
+    const res = await cchatApi.exchangeOAuthTicket('test-ticket-123');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe('/api/auth/oauth-ticket/');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({ ticket: 'test-ticket-123' });
+    expect(res.token).toBe('auth-token-xyz');
+    expect(authStorage.getToken()).toBe('auth-token-xyz');
   });
 });
 

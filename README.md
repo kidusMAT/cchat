@@ -169,9 +169,14 @@ See [.env.example](file:///home/inthesession/cc/cchat/.env.example) for a comple
 ### Authentication
 - `POST /api/auth/register/`: Register a new user account and profile.
 - `POST /api/auth/login/`: Obtain Token via username/password.
-- `POST /api/auth/demo-login/`: Switch demo account (Maya, Jules, Nina, Leo).
+- `POST /api/auth/demo-login/`: Local-development and test-only demo account switcher; unavailable in production.
 - `POST /api/auth/logout/`: Invalidate authentication token.
 - `GET /api/auth/me/`: Retrieve authenticated user profile.
+- `GET /api/auth/oauth-status/`: Public status indicator for Google OAuth enablement.
+- `GET /api/auth/google/login/`: Initiate Google OAuth 2.0 authorization code flow.
+- `GET /api/auth/google/callback/`: Google OAuth callback; handles account resolution and issues ticket.
+- `POST /api/auth/oauth-ticket/`: Exchange single-use login ticket for authentication token and profile.
+- `POST /api/auth/google/`: Direct Google credential / ID token authentication for SPA & One-Tap.
 
 ### Conversations & Messages
 - `GET /api/chats/`: List conversations where authenticated user is a participant.

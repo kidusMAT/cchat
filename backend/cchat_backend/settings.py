@@ -9,6 +9,7 @@ from pathlib import Path
 import os
 import sys
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,13 +19,21 @@ sys.path.insert(0, str(BASE_DIR))
 sys.path.insert(0, str(BASE_DIR / 'apps'))
 
 # Secret Key Configuration
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
+INSECURE_DEVELOPMENT_SECRET_KEY = (
     'django-insecure-prod-ready-cchat-key-must-be-replaced-in-production-env-random-884920491024'
 )
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', INSECURE_DEVELOPMENT_SECRET_KEY)
 
 # Debug mode: default False in production, default True for runserver
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True' if 'runserver' in sys.argv else 'False').lower() in ('true', '1', 't')
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True' if any(cmd in sys.argv for cmd in ('runserver', 'makemigrations', 'migrate', 'check', 'shell', 'seed_data')) or any(arg.endswith('manage.py') for arg in sys.argv[:1]) else 'False').lower() in ('true', '1', 't')
+
+# A deployment must provide its own secret.  Keeping a development fallback is
+# convenient for `manage.py runserver`, but using it in production would make
+# signed cookies, password-reset tokens, and CSRF secrets predictable.
+if not DEBUG and 'test' not in sys.argv and SECRET_KEY == INSECURE_DEVELOPMENT_SECRET_KEY:
+    raise ImproperlyConfigured(
+        'DJANGO_SECRET_KEY must be set to a unique, high-entropy value when DJANGO_DEBUG=False.'
+    )
 
 # Allowed Hosts
 ALLOWED_HOSTS = [
@@ -140,6 +149,22 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_origins_env.split(',') if o.stri
 CORS_ALLOW_CREDENTIALS = True
 
 TESTING = 'test' in sys.argv
+# Demo account switching is deliberately unavailable in deployed environments.
+# It may only be used by local development and the automated test suite.
+DEMO_LOGIN_ENABLED = DEBUG or TESTING
+
+# Google OAuth is opt-in: all four settings are required before the endpoints
+# issue authorization URLs. Keep the client secret server-side only.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
+GOOGLE_OAUTH_REDIRECT_URI = os.environ.get('GOOGLE_OAUTH_REDIRECT_URI', '')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173' if DEBUG else '')
+GOOGLE_OAUTH_ENABLED = all((
+    GOOGLE_OAUTH_CLIENT_ID,
+    GOOGLE_OAUTH_CLIENT_SECRET,
+    GOOGLE_OAUTH_REDIRECT_URI,
+    FRONTEND_URL,
+))
 
 # Security Settings for Production
 if not DEBUG and not TESTING:
@@ -187,4 +212,7 @@ REST_FRAMEWORK = {
 
 if TESTING:
     REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.MD5PasswordHasher',
+    ]
 

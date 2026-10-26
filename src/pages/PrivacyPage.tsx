@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Search, Bell, ShieldCheck, ChevronDown, CheckCircle2, AlertCircle, Menu } from 'lucide-react';
 import { cchatApi, UserProfile } from '../services/api';
 import { FooterLinks } from '../components/FooterLinks';
@@ -11,18 +11,11 @@ interface PrivacyPageProps {
 
 export function PrivacyPage({ currentUser, onNavigate, onOpenMenu }: PrivacyPageProps) {
   const [requestType, setRequestType] = useState('Account data');
-  const [email, setEmail] = useState(
-    currentUser?.email || (currentUser?.username ? `${currentUser.username}@example.com` : 'user@example.com')
-  );
+  const defaultEmail = currentUser?.email || (currentUser?.username ? `${currentUser.username}@example.com` : 'user@example.com');
+  const [typedEmail, setTypedEmail] = useState<string | null>(null);
+  const email = typedEmail ?? defaultEmail;
+  const setEmail = (val: string) => setTypedEmail(val);
   const [details, setDetails] = useState("I'd like to review my account information.");
-
-  useEffect(() => {
-    if (currentUser?.email) {
-      setEmail(currentUser.email);
-    } else if (currentUser?.username) {
-      setEmail(`${currentUser.username}@example.com`);
-    }
-  }, [currentUser]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
